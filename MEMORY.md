@@ -35,10 +35,13 @@ move through payable stakes, claims, and withdrawals.
 - genvm-lint validate is broken when both SDK libs are on sys.path (imports old `genlayer` first). Validate schema manually against lib `11rhn002…`.
 - Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. Never `strict_eq` for web/LLM output.
 
-## Deployed state
-- StudioNet dev/test deployment (mine, for integration testing): `0x40891b05D24BFaDD04D34d71d0e434C9183d096b` (deployer `0x7452084E1Cf767bf19C743051cFf27D9F7A87a4D`, CLI account `eventweaver`).
-- **Owner's production contract address: _pending — owner deploying_** → set `CONTRACT_ADDRESS` in backend (Fly secrets) and `VITE_CONTRACT_ADDRESS` in frontend (Vercel env) when provided.
-- Fly.io account: adebiyi2002@gmail.com. Vercel account: adebiyi2002-7145.
+## Deployed state (live)
+- **Contract (StudioNet)**: `0x40891b05D24BFaDD04D34d71d0e434C9183d096b` (deployer `0x7452084E1Cf767bf19C743051cFf27D9F7A87a4D`, CLI account `eventweaver`). Seeded with 2 demo markets; verified: create, payable stake, deposit/withdraw, live web adjudication (MAJORITY_AGREE, no rotation).
+- **Backend**: https://eventweaver-api.fly.dev (Fly app `eventweaver-api` + Postgres `eventweaver-db`, iad, 24/7). Secrets: `CONTRACT_ADDRESS`, `DATABASE_URL`, `CORS_ORIGINS`.
+- **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`, scope adebiyi2002gmailcoms-projects; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`).
+- **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).
+- If the owner deploys their own contract address: `fly secrets set CONTRACT_ADDRESS=0x… -a eventweaver-api`, update the two Vercel envs, redeploy both.
+- StudioNet quirks: `sim_fundAccount` RPC funds test accounts (wei units); other Studio users can and do interact with public contracts (expect foreign stakes/checks); `latest-nonfinal` reads can lag writes by ~15–30s.
 
 ## Review-team constraints (rewards)
 One serious project; validators must verify actual outcomes (not JSON shape);
