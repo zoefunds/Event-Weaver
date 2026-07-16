@@ -51,7 +51,9 @@ export default function Portfolio() {
     if (units <= 0n) return push('error', 'Enter a positive amount.');
     setBusy('withdraw');
     try {
-      await contractWrite(client, 'withdraw', [units.toString()]);
+      // Pass the BigInt itself — genlayer-js encodes big integers natively;
+      // a string here reaches the contract as str and breaks the int compare.
+      await contractWrite(client, 'withdraw', [units]);
       push('success', `Withdrawal submitted — ${withdrawAmt} GEN transfers to your wallet at finality.`);
       setWithdrawAmt('');
       await refresh();

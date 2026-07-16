@@ -924,6 +924,10 @@ Rules:
         sender = gl.message.sender_address
         side_normalized = side.strip().upper()
         _require(side_normalized in ("YES", "NO"), "side must be 'YES' or 'NO'")
+        try:
+            amount = int(amount)
+        except (ValueError, TypeError):
+            raise gl.vm.UserError(ERR_EXPECTED + "amount must be an integer")
         current = self.balances.get(sender)
         available = int(current) if current is not None else 0
         _require(amount > 0 and amount <= available, "insufficient internal balance")
@@ -953,6 +957,10 @@ Rules:
         contract to the caller, emitted on finalization. Outbound half of the
         value-transfer path."""
         sender = gl.message.sender_address
+        try:
+            amount = int(amount)  # tolerate stringly-typed calldata amounts
+        except (ValueError, TypeError):
+            raise gl.vm.UserError(ERR_EXPECTED + "amount must be an integer")
         current = self.balances.get(sender)
         available = int(current) if current is not None else 0
         _require(amount > 0, "withdraw amount must be positive")
