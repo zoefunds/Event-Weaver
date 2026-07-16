@@ -14,8 +14,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: pip install genvm-linter
+      - run: pip install genvm-linter genlayer-test pytest
       - run: genvm-lint lint contracts/event_weaver.py --json
+      # gltest.direct expects the GenVM tarball under ~/.cache/gltest-direct;
+      # reuse the linter's download (the gltest asset URL 404s upstream).
+      - run: |
+          genvm-lint download
+          mkdir -p ~/.cache/gltest-direct
+          cp ~/.cache/genvm-linter/genvm-universal-*.tar.xz ~/.cache/gltest-direct/
+      - run: pytest tests/direct/ -v
 
   backend:
     name: Backend build
