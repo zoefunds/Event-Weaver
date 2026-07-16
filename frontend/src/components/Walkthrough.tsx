@@ -46,7 +46,9 @@ export function Walkthrough() {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
-    if (!localStorage.getItem(LS_KEY)) setOpen(true);
+    // ?tour=0 suppresses the auto-tour (embeds, screenshots, deep links)
+    const suppressed = new URLSearchParams(window.location.search).get('tour') === '0';
+    if (!suppressed && !localStorage.getItem(LS_KEY)) setOpen(true);
     const reopen = () => {
       setStep(0);
       setOpen(true);
