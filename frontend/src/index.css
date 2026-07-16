@@ -1,0 +1,119 @@
+@import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   EventWeaver — "Causal Web" design system (from DESIGN.md)
+   Dark-mode-first command center: obsidian layers, Logic Blue, Adjudication
+   Purple, Emerald verdicts, glassmorphism depth.
+   ========================================================================== */
+
+@theme {
+  --color-background: #0a0a0b;
+  --color-surface: #131314;
+  --color-surface-low: #1c1b1c;
+  --color-surface-mid: #201f20;
+  --color-surface-high: #2a2a2b;
+  --color-surface-highest: #353436;
+  --color-on-surface: #e5e2e3;
+  --color-on-variant: #c2c6d6;
+  --color-outline: #8c909f;
+  --color-outline-variant: #424754;
+
+  --color-primary: #adc6ff;        /* Logic Blue (light) */
+  --color-primary-deep: #4d8eff;   /* Logic Blue (saturated) */
+  --color-on-primary: #002e6a;
+  --color-secondary: #d0bcff;      /* Adjudication Purple (light) */
+  --color-secondary-deep: #571bc1; /* Adjudication Purple */
+  --color-tertiary: #4edea3;       /* Emerald — success / fulfilled */
+  --color-on-tertiary: #003824;
+  --color-error: #ffb4ab;
+  --color-error-deep: #93000a;
+  --color-amber: #ffd28a;          /* pending / warnings */
+
+  --font-display: 'Geist', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+/* ---- reusable primitives ------------------------------------------------ */
+
+.glass {
+  background: rgba(18, 18, 20, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s;
+}
+.glass-hover:hover {
+  border-color: rgba(173, 198, 255, 0.3);
+  box-shadow: 0 0 20px rgba(173, 198, 255, 0.08);
+}
+
+.label-caps {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.logic-line {
+  background: linear-gradient(90deg, #adc6ff 0%, #4edea3 100%);
+  height: 1.5px;
+  position: relative;
+}
+.logic-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: inherit;
+  filter: blur(4px);
+  opacity: 0.5;
+}
+
+.hex-node {
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+.pulse-node { animation: ew-pulse 2s infinite; }
+@keyframes ew-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.7; }
+}
+
+.dash-flow {
+  stroke-dasharray: 10;
+  animation: ew-dash 5s linear infinite;
+}
+@keyframes ew-dash { to { stroke-dashoffset: -100; } }
+
+.genlayer-gradient {
+  background: linear-gradient(135deg, #4d8eff, #571bc1);
+}
+
+.grid-bg {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.custom-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb { background: #353436; border-radius: 10px; }
+
+input[type='range'] { accent-color: #adc6ff; }
