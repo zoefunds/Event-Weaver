@@ -6,6 +6,7 @@ import pinoHttp from 'pino-http';
 import { config, assertConfig } from './config.js';
 import { initDb } from './db.js';
 import { startIndexer } from './indexer.js';
+import { startResolver } from './resolver.js';
 import { router } from './routes.js';
 
 /**
@@ -63,6 +64,7 @@ async function main() {
   server.headersTimeout = 70000;
 
   startIndexer(logger);
+  startResolver(logger);
 
   // Graceful drain on deploy-driven restarts; Fly restarts us immediately.
   for (const sig of ['SIGTERM', 'SIGINT']) {

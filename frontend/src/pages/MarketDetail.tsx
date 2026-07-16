@@ -29,7 +29,7 @@ export default function MarketDetail() {
         try {
           const pos = (await readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0x40891b05D24BFaDD04D34d71d0e434C9183d096b') as `0x${string}`,
+              '0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
           })) as unknown;
@@ -103,6 +103,11 @@ export default function MarketDetail() {
   const canClaim =
     position && !position.claimed && winningSide &&
     ((winningSide === 'yes' && position.yes_amount > 0) || (winningSide === 'no' && position.no_amount > 0));
+  const deadlinePassed = Date.now() / 1000 > market.deadline_ts;
+  // Contract policy: pre-deadline adjudication is creator-only; post-deadline
+  // it is permissionless (and the backend auto-triggers it anyway).
+  const canAdjudicate =
+    deadlinePassed || (address != null && address.toLowerCase() === market.creator.toLowerCase());
 
   return (
     <main className="mx-auto max-w-[1440px] px-5 pb-16 pt-24 md:px-16">
@@ -219,7 +224,7 @@ export default function MarketDetail() {
               </>
             )}
 
-            {!isTerminal && (
+            {!isTerminal && canAdjudicate && (
               <button
                 onClick={requestResolution}
                 disabled={!!busy}
@@ -227,6 +232,15 @@ export default function MarketDetail() {
               >
                 {busy === 'resolve' ? 'Validators adjudicating…' : 'REQUEST ADJUDICATION'}
               </button>
+            )}
+            {!isTerminal && !deadlinePassed && (
+              <p className="mt-4 text-center text-[11px] leading-relaxed text-outline">
+                {canAdjudicate
+                  ? 'As the market creator you can verify steps early. '
+                  : ''}
+                Adjudication runs automatically once the deadline passes — GenLayer validators
+                fetch the evidence and settle the chain.
+              </p>
             )}
 
             {canClaim && (

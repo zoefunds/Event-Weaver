@@ -4,6 +4,7 @@ import { WalletProvider } from './lib/wallet';
 import { ToastProvider } from './components/Toast';
 import { Nav } from './components/Nav';
 import { Footer } from './components/Footer';
+import { Walkthrough } from './components/Walkthrough';
 import Landing from './pages/Landing';
 import Markets from './pages/Markets';
 import MarketDetail from './pages/MarketDetail';
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/portfolio" element={<Portfolio />} />
           </Routes>
           <Footer />
+          <Walkthrough />
         </BrowserRouter>
         <Analytics />
       </ToastProvider>

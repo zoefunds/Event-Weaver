@@ -4,7 +4,7 @@ import 'dotenv/config';
 export const config = {
   port: parseInt(process.env.PORT ?? '8080', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x40891b05D24BFaDD04D34d71d0e434C9183d096b',
+  contractAddress: process.env.CONTRACT_ADDRESS ?? '0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80',
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS ?? '15000', 10),
   corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((s) => s.trim()),
   logLevel: process.env.LOG_LEVEL ?? 'info',

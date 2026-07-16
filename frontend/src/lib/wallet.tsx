@@ -19,7 +19,7 @@ import type { GenLayerClient } from 'genlayer-js/types';
  */
 
 export const CONTRACT_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS ??
-  '0x40891b05D24BFaDD04D34d71d0e434C9183d096b') as `0x${string}`;
+  '0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80') as `0x${string}`;
 
 interface EthereumProvider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;

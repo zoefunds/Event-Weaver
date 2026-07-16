@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { openWalkthrough } from './Walkthrough';
 
 export function Footer() {
   return (
@@ -27,6 +28,12 @@ export function Footer() {
         >
           Create
         </Link>
+        <button
+          onClick={openWalkthrough}
+          className="label-caps text-on-variant opacity-80 transition-colors hover:text-tertiary hover:opacity-100"
+        >
+          Take the tour
+        </button>
       </div>
     </footer>
   );

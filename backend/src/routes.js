@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { listMarkets, getMarket, getActivity, getActorActivity, getStats, dbHealthy, hasDb } from './db.js';
 import { readContract, plain } from './genlayer.js';
 import { indexerState } from './indexer.js';
+import { resolverState } from './resolver.js';
 import { config } from './config.js';
 
 export const router = Router();
@@ -18,6 +19,12 @@ router.get('/health', asyncRoute(async (_req, res) => {
       lastSyncAt: indexerState.lastSyncAt,
       lastError: indexerState.lastError,
       marketsIndexed: indexerState.marketsIndexed,
+    },
+    resolver: {
+      lastRunAt: resolverState.lastRunAt,
+      attempts: resolverState.attempts,
+      resolved: resolverState.resolved,
+      lastError: resolverState.lastError,
     },
     contract: config.contractAddress,
     uptimeSec: Math.floor(process.uptime()),

@@ -399,6 +399,20 @@ class EventWeaver(gl.Contract):
         if gl.message.sender_address != self.owner:
             raise gl.vm.UserError(ERR_EXPECTED + "only the owner may call this")
 
+    def _require_adjudication_rights(self, market: Market, now_ts: int) -> None:
+        """Adjudication policy: before the market deadline only the market
+        creator or the platform owner may trigger step checks (progressive
+        verification of long chains). After the deadline adjudication is
+        fully permissionless — anyone (including the platform's automatic
+        resolver) may trigger it, and validators decide trustlessly."""
+        if now_ts > int(market.deadline_ts):
+            return
+        sender = gl.message.sender_address
+        _require(
+            sender == market.creator or sender == self.owner,
+            "before the deadline only the market creator or owner may trigger adjudication",
+        )
+
     def _get_market(self, market_id: int) -> Market:
         mid = u32(market_id)
         market = self.markets.get(mid)
@@ -1036,6 +1050,7 @@ Rules:
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not resolvable")
+        self._require_adjudication_rights(market, now_ts)
         steps = self.market_steps[u32(market_id)]
         _require(0 <= step_index < len(steps), "step index out of range")
 
@@ -1093,6 +1108,7 @@ Rules:
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not resolvable")
+        self._require_adjudication_rights(market, now_ts)
         if status == STATUS_OPEN:
             market.status = u8(STATUS_RESOLVING)
 
