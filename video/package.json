@@ -1,0 +1,24 @@
+{
+  "name": "eventweaver-film",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "remotion studio src/index.ts",
+    "build": "remotion render src/index.ts Master out/eventweaver-master.mp4",
+    "build:vertical": "remotion render src/index.ts Vertical out/eventweaver-vertical.mp4",
+    "build:square": "remotion render src/index.ts Square out/eventweaver-square.mp4",
+    "build:teaser": "remotion render src/index.ts Teaser out/eventweaver-teaser.mp4",
+    "still": "remotion still src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.290",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.290"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "playwright": "^1.61.1",
+    "typescript": "^5.5.4"
+  }
+}

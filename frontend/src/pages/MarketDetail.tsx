@@ -29,7 +29,7 @@ export default function MarketDetail() {
         try {
           const pos = (await readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80') as `0x${string}`,
+              '0xD0F41F8417a5b6ae68E67Bd699B1b66a2ba51eAf') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
           })) as unknown;

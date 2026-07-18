@@ -32,12 +32,13 @@ move through payable stakes, claims, and withdrawals.
 - **TreeMap keys** must be Comparable (`u32`, `str`, `Address`) — `u64` keys fail genvm-lint E018.
 - **Studio/CLI auto-decodes JSON-looking string args into lists** before the contract sees them — accept both `str` and `list` for JSON params.
 - **CLI has no `--value` flag on `write`** — payable calls must go through genlayer-js (`writeContract({..., value})`).
+- **Native transfers to a MetaMask/EOA wallet require the `@gl.evm.contract_interface` stub** (`_Recipient` with empty `View`/`Write` classes, then `_Recipient(Address(to)).emit_transfer(value=v)`). `gl.get_contract_at(addr).emit_transfer(...)` is the **IC-to-IC** path only — using it to pay out to a user's wallet silently does not move real balance. This was the root cause of "claim doesn't show in my wallet." Verified fix via `eth_getBalance` delta on a real EOA before/after withdraw.
 - StudioNet has no `gen_dbg_traceTransaction`; debug via `genlayer receipt <tx> --stdout --stderr`.
 - genvm-lint validate is broken when both SDK libs are on sys.path (imports old `genlayer` first). Validate schema manually against lib `11rhn002…`.
 - Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. Never `strict_eq` for web/LLM output.
 
 ## Deployed state (live)
-- **Contract (StudioNet)**: `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` (OWNER-deployed; owner wallet `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb`). Seeded with 2 demo markets; verified: create, payable stake, deposit/withdraw, live web adjudication (MAJORITY_AGREE, no rotation).
+- **Contract (StudioNet)**: `0xD0F41F8417a5b6ae68E67Bd699B1b66a2ba51eAf` (OWNER-deployed; owner wallet `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb`). Seeded with 2 demo markets; verified: create, payable stake, deposit/withdraw, live web adjudication (MAJORITY_AGREE, no rotation).
 - **Backend**: https://eventweaver-api.fly.dev (Fly app `eventweaver-api` + Postgres `eventweaver-db`, iad, 24/7). Secrets: `CONTRACT_ADDRESS`, `DATABASE_URL`, `CORS_ORIGINS`.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`, scope adebiyi2002gmailcoms-projects; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).

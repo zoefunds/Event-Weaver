@@ -320,6 +320,31 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
 
 
 # ============================================================================
+#  Native transfer target — payouts go to MetaMask wallets (EOAs), not other
+#  Intelligent Contracts. gl.get_contract_at(...).emit_transfer(...) is the
+#  IC-to-IC path and does not settle real balance for an externally-owned
+#  account. The EOA/EVM path requires this contract-interface stub instead.
+# ============================================================================
+
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+
+    class Write:
+        pass
+
+
+def _send_gen(to_address: Address, amount: int) -> None:
+    """Single emission choke point for every native-token payout. Zero the
+    ledger field and persist state BEFORE calling this — never after —
+    so a reentrant call always finds the balance already zeroed."""
+    if amount <= 0:
+        return
+    _Recipient(to_address).emit_transfer(value=u256(int(amount)))
+
+
+# ============================================================================
 #  The Contract
 # ============================================================================
 
@@ -472,11 +497,10 @@ class EventWeaver(gl.Contract):
 
     def _send_native(self, recipient: Address, amount: int) -> None:
         """Emit an actual native-token transfer from this contract to
-        `recipient`, settled when the transaction is finalized. This is the
-        outbound half of the value-transfer path."""
-        if amount <= 0:
-            return
-        gl.get_contract_at(recipient).emit_transfer(value=u256(int(amount)), on="finalized")
+        `recipient` (a wallet/EOA). Outbound half of the value-transfer path.
+        Delegates to the module-level `_send_gen` choke point — callers must
+        zero and persist the ledger field(s) BEFORE invoking this."""
+        _send_gen(recipient, amount)
 
     # ------------------------------------------------------------------------
     #  Market serialization for views (schema-safe primitives only)
