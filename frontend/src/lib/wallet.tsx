@@ -33,6 +33,42 @@ declare global {
   }
 }
 
+const STUDIONET_CHAIN_ID_HEX = `0x${studionet.id.toString(16)}`;
+
+/**
+ * Force the injected wallet onto GenLayer StudioNet. Without this, MetaMask
+ * signs and submits writes on whatever chain it currently has selected
+ * (commonly Ethereum Mainnet) — the transaction "succeeds" in the wallet's
+ * eyes but never reaches this contract, which is exactly what "my stake
+ * isn't going on-chain" looks like. Adds the network if MetaMask doesn't
+ * know about it yet (error code 4902).
+ */
+async function ensureStudioNetwork(eth: EthereumProvider): Promise<void> {
+  try {
+    await eth.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: STUDIONET_CHAIN_ID_HEX }],
+    });
+  } catch (err) {
+    const code = (err as { code?: number })?.code;
+    if (code !== 4902) throw err;
+    await eth.request({
+      method: 'wallet_addEthereumChain',
+      params: [
+        {
+          chainId: STUDIONET_CHAIN_ID_HEX,
+          chainName: studionet.name,
+          nativeCurrency: studionet.nativeCurrency,
+          rpcUrls: studionet.rpcUrls.default.http,
+          blockExplorerUrls: studionet.blockExplorers?.default
+            ? [studionet.blockExplorers.default.url]
+            : undefined,
+        },
+      ],
+    });
+  }
+}
+
 interface WalletState {
   address: `0x${string}` | null;
   client: GenLayerClient<typeof studionet> | null;
@@ -69,6 +105,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
       })) as string[];
+      await ensureStudioNetwork(window.ethereum);
       if (accounts[0]) {
         setAddress(accounts[0] as `0x${string}`);
         localStorage.setItem('ew:address', accounts[0]);
@@ -148,6 +185,12 @@ export async function contractWrite(
   args: unknown[],
   value?: bigint
 ): Promise<unknown> {
+  // Re-assert the network on every write: the user may have switched chains
+  // in MetaMask after connecting without disconnecting from the app, which
+  // would otherwise silently sign against the wrong chain.
+  if (typeof window !== 'undefined' && window.ethereum) {
+    await ensureStudioNetwork(window.ethereum);
+  }
   const hash = await client.writeContract({
     address: CONTRACT_ADDRESS,
     functionName,
