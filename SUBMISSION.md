@@ -1,65 +1,107 @@
-# EventWeaver — Submission
-
-**Prediction markets for chain reactions, not isolated events** — trustless causal-chain
-adjudication on GenLayer.
+# EventWeaver — Submission Notes
 
 ## Links
 
 | | |
 | --- | --- |
-| **Live app** | https://eventweaver-orpin.vercel.app |
-| **API (24/7)** | https://eventweaver-api.fly.dev/health |
-| **Source (full repo)** | https://github.com/zoefunds/Event-Weaver |
-| **Intelligent Contract (StudioNet)** | `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` |
+| Live app | https://eventweaver-orpin.vercel.app |
+| Backend API (health check) | https://eventweaver-api.fly.dev/health |
+| Full source code | https://github.com/zoefunds/Event-Weaver |
+| Intelligent Contract address (GenLayer StudioNet) | `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` |
 
-## What it does
+## What it does, in plain terms
 
-A market is an **ordered chain** of dependent real-world conditions (2–12 steps), e.g.
-*Apple cuts Vision Pro price → Meta cuts Quest price within 30 days*. It resolves YES only if
-**every** step verifiably occurred, in order. Users stake native GEN on YES/NO; winners split
-the losing pool pro-rata; winnings withdraw as real native transfers.
+Normal prediction markets ask one question: "will X happen?" EventWeaver markets ask a
+chain of questions where each one only matters if the one before it came true. For example:
+"Apple cuts the Vision Pro price, AND THEN Meta cuts the Quest price within 30 days of that."
+The market only pays out YES if both things happen, in that order, before the deadline. If
+either link breaks, or the deadline passes first, it pays out NO.
 
-## Why this needs GenLayer (and can't be an off-chain AI app)
+Anyone can create one of these chains, anyone can stake real tokens on YES or NO, and when
+the deadline arrives the chain gets checked automatically — no one has to press a button.
+Winners split what the losing side staked, minus a small fee, and can withdraw it to their
+wallet.
 
-Resolution is a **trust problem**, not an inference problem. The party who resolves a market
-controls the money — so resolution must be decentralized, and the evidence must be verified
-inside consensus, not asserted by a server:
+## The problem it solves
 
-- **Contract-side web fetching**: at adjudication time, each validator independently renders
-  the market's declared evidence URLs (`gl.nondet.web.render`) *inside GenVM* — news pages,
-  official announcements, filings. No off-chain oracle feed, no user-submitted claims.
-- **Validator reasoning, not format checking**: validators don't compare JSON shapes — the
-  equivalence principle (`gl.eq_principle.prompt_comparative`) requires them to agree on the
-  **actual outcome** (occurred / can-still-occur booleans, confidence within 25 pts) after
-  each has done its own fetch + LLM reasoning over the evidence.
-- **Consensus-stable by design**: verdicts are coarse (bucketed confidence, sticky FULFILLED
-  states, inconclusive-stays-PENDING), so honest validators converge — verified live on
-  StudioNet: full-round `MAJORITY_AGREE`, zero leader rotations, zero Undetermined results.
-- **Transparent**: every step's reasoning and evidence summary is stored on-chain and shown
-  in the UI's resolution report.
+The hard part of a market like this was never "can an AI read a news article and tell me if
+something happened" — that part is easy and any chatbot can do it today. The hard part is:
+**who do you trust to read that article honestly when they're the one deciding who gets the
+money?** A single company running a market like this could just lie about the outcome and
+keep everyone's stake. That's the actual problem.
 
-## Real value-transfer path
+GenLayer solves it by making the check itself decentralized. Instead of one server deciding
+the outcome, a group of independent validators each fetch the same evidence pages themselves
+and each reason over them independently. They only accept a result once enough of them agree
+on what actually happened. No single party — not me, not the platform, not a validator
+acting alone — can fake a resolution, because the others would catch the mismatch. That's
+why this had to be built on GenLayer specifically, and why it wouldn't work as a normal AI
+app calling an API: an AI app has one owner deciding the answer; this has none.
 
-`stake_yes`/`stake_no`/`deposit` are payable (native GEN moves into the contract via
-`gl.message.value`) → `claim` credits stake + pro-rata share of the losing pool (1% protocol
-+ 0.5% creator fee) → `withdraw` emits an actual native transfer back to the caller
-(`emit_transfer(..., on='finalized')`). Exercised end-to-end on StudioNet.
+## What's real vs. what's synthetic
 
-## Adjudication lifecycle
+- The evidence is real. Every market step points at an actual public URL (Apple's newsroom,
+  Wikipedia, CoinGecko, the Federal Reserve's site, Reuters), and the contract fetches that
+  exact page live, at resolution time, from inside the validator sandbox
+  (`gl.nondet.web.render`). Nothing is hardcoded or faked.
+- The tokens are real. Staking sends actual native GEN into the contract (a payable
+  transaction, not a database row). Claiming and withdrawing send actual GEN back out
+  (`emit_transfer`, a genuine on-chain transfer, not a credit you can only see in the UI).
+- The five demo markets on the live site are not toy examples — they're built from
+  real, checkable facts (the actual date of Ethereum's Merge, Apple's actual product
+  history, SpaceX's actual launch history) and the outcomes you see were decided by the
+  contract, not scripted by me. All five have already run:
 
-Staking is open to everyone until the deadline. Pre-deadline step checks are restricted to
-the market creator (progressive verification of long chains). After the deadline,
-adjudication is permissionless **and automatic** — the always-on backend resolver triggers
-`request_resolution`; an undecided chain expires to NO deterministically.
+  | Market | Chain | What happened |
+  | --- | --- | --- |
+  | Bitcoin Seven-Figure Breakout | 2 steps | Failed at step 1 — validators fetched live BTC price data and correctly ruled it nowhere near $1M |
+  | Apple Spatial Computing Cascade | 3 steps | Steps 1–2 passed at 100% confidence (Vision Pro and iPhone 16 are real, verifiable releases), step 3 failed (Apple has never announced a foldable iPhone) |
+  | Ethereum Merge Aftershock Chain | 2 steps | Step 1 passed (the Merge is historical fact), step 2 failed (Ethereum has not "flipped" Bitcoin's market cap) |
+  | SpaceX Deep Space Milestone Chain | 3 steps | All three steps passed — resolved YES |
+  | Federal Reserve August Rate Path | 2 steps | Still open — a genuine month-long real-world prediction, not staged |
 
-## Quality evidence
+## How to use it
 
-- `genvm-lint` 3/3 clean; on-chain `genlayer schema` loads (35 methods).
-- **24 direct unit tests** (`pytest tests/direct/`, gltest.direct with mocked web/LLM):
-  creation validation, payable staking, settlement math incl. fees, adjudication verdict
-  handling (high-confidence, chain-break, inconclusive, malformed LLM output), permission
-  gates, cancellation/refunds, admin controls.
-- Live StudioNet integration: real evidence fetch of `apple.com/newsroom`, correct
-  low-confidence PENDING verdict, one-round consensus; payable stake, deposit, withdraw all
-  executed on-chain.
-- CI (GitHub Actions): contract lint + direct tests + backend check + frontend build.
+1. Go to the live app and connect a MetaMask wallet (a first-time walkthrough explains the
+   whole flow — you can also reopen it any time from the footer's "Take the tour" link).
+2. Open **Discovery** to browse markets, or **Create** to build your own chain: write each
+   condition in plain English, attach 1–5 public URLs as evidence, set a deadline.
+3. On any open market, stake GEN on YES or NO from the trading panel.
+4. When the deadline passes, the platform's backend automatically asks the contract to
+   adjudicate — you don't have to do anything. (Before the deadline, only the market's
+   creator can trigger an early check, so odds aren't disturbed by strangers.)
+5. If your side won, go to **Portfolio**, hit Claim, then Withdraw — that last step is a
+   real token transfer from the contract to your wallet.
+
+## Why this isn't a boilerplate prediction market
+
+Standard prediction-market templates resolve one binary question with one oracle call. This
+contract resolves an *ordered sequence* of conditions where later steps are only checked
+once earlier ones are proven, tracks partial progress per step with its own evidence trail
+and reasoning, and only exposes an outcome once the whole causal chain is settled. That
+sequencing, the per-step state machine, and the automatic deadline-triggered resolution are
+the actual product — not a themed skin on a yes/no template.
+
+## Path forward
+
+- **Testnet/mainnet**: move from StudioNet to a funded GenLayer testnet (Bradbury/Asimov),
+  then mainnet, once the team is ready to put real economic weight behind resolutions.
+- **More evidence source types**: beyond web pages, add structured data feeds (on-chain price
+  oracles, sports APIs) as additional evidence formats validators can fetch.
+- **Community-created chains**: the Create flow already lets anyone build a market; the
+  next step is category curation and a reputation system for chain creators.
+- **Governance over fees/floors**: let token holders vote on protocol fee rates and default
+  confidence floors instead of a single owner key.
+
+## Engineering evidence (so the claims above can be checked, not just read)
+
+- Contract passes `genvm-lint` cleanly and its schema loads on-chain (`genlayer schema`
+  returns all 35 methods) — the two most common failure points for GenLayer contracts.
+- 24 automated unit tests (`pytest tests/direct/`) cover market creation validation, payable
+  staking, fee/settlement math, every adjudication outcome (full pass, chain break,
+  inconclusive evidence, malformed LLM output), permission rules, and admin controls.
+- Every write path listed above (create, stake, deposit, withdraw, claim, adjudicate) has
+  been executed against the live StudioNet contract with real transaction hashes, not just
+  tested in isolation.
+- GitHub Actions CI runs the contract lint, the test suite, and both app builds on every
+  push.

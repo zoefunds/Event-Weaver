@@ -29,8 +29,9 @@
 11. [Deployment](#deployment)
 12. [Testing & quality gates](#testing--quality-gates)
 13. [Deployed addresses](#deployed-addresses)
-14. [Project structure](#project-structure)
-15. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
+14. [Path forward](#path-forward)
+15. [Project structure](#project-structure)
+16. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
 
 ---
 
@@ -275,6 +276,17 @@ adjudication permissions, expiry, cancellation/refunds, and admin controls.
 | Intelligent Contract | `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` (GenLayer StudioNet) |
 | Backend API | https://eventweaver-api.fly.dev |
 | Frontend | https://eventweaver-orpin.vercel.app |
+
+## Path forward
+
+- **Testnet / mainnet**: move from StudioNet to a funded GenLayer testnet, then mainnet, once
+  ready to put real economic weight behind resolutions.
+- **More evidence source types**: structured feeds (on-chain price oracles, sports APIs)
+  alongside rendered web pages as additional evidence formats validators can fetch.
+- **Community-created chains**: the Create flow already lets anyone build a market; next is
+  category curation and a reputation system for chain creators.
+- **Governance**: let token holders vote on protocol fee rates and confidence floors instead
+  of a single owner key.
 
 ## Project structure
 
