@@ -273,7 +273,7 @@ adjudication permissions, expiry, cancellation/refunds, and admin controls.
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` (GenLayer StudioNet) |
+| Intelligent Contract | `0xb28225714cb7C087d30F3168d241d094Bcd8a03A` (GenLayer StudioNet) |
 | Backend API | https://eventweaver-api.fly.dev |
 | Frontend | https://eventweaver-orpin.vercel.app |
 
