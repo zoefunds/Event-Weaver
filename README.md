@@ -6,7 +6,7 @@
 
 *Trustless causal-chain adjudication powered by GenLayer Intelligent Contracts.*
 
-[**Live App**](https://eventweaver-orpin.vercel.app) · [**API**](https://eventweaver-api.fly.dev/health) · [**Contract on StudioNet**](#deployed-addresses) · [**Docs**](docs/)
+[**Live App**](https://eventweaver-orpin.vercel.app) · [**API**](https://eventweaver-api-prod.fly.dev/health) · [**Contract on StudioNet**](#deployed-addresses) · [**Docs**](docs/)
 
 ![Landing page](docs/images/landing.png)
 
@@ -29,9 +29,10 @@
 11. [Deployment](#deployment)
 12. [Testing & quality gates](#testing--quality-gates)
 13. [Deployed addresses](#deployed-addresses)
-14. [Path forward](#path-forward)
-15. [Project structure](#project-structure)
-16. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
+14. [Authenticated clock design](#authenticated-clock-design)
+15. [Path forward](#path-forward)
+16. [Project structure](#project-structure)
+17. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
 
 ---
 
@@ -176,6 +177,9 @@ Single production contract: [`contracts/event_weaver.py`](contracts/event_weaver
   `LLM_ERROR:` so clients can react programmatically.
 - **Admin**: pause/unpause, fee schedule (hard 10% cap), minimums, ownership transfer,
   protocol-fee sweep.
+- **Authenticated clock**: staking windows, adjudication rights, expiry, and settlement all
+  read time from an internal `_now_ts()` sourced from GenVM's consensus-agreed block clock —
+  never from caller-supplied calldata. See [Authenticated clock design](#authenticated-clock-design).
 
 Reference: [docs/CONTRACT.md](docs/CONTRACT.md)
 
@@ -261,21 +265,42 @@ cd frontend && vercel deploy --prod
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
 | Schema extraction | verified against the pinned runner SDK | 35 methods |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **24 passing** |
+| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **29 passing** |
 | Live integration | StudioNet: create → payable stake → adjudicate real URLs → claim → withdraw | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
 The direct suite covers creation validation, payable staking, settlement math with fees,
 verdict handling (high-confidence, chain-break, inconclusive, malformed LLM output),
-adjudication permissions, expiry, cancellation/refunds, and admin controls.
+adjudication permissions, expiry, cancellation/refunds, admin controls, and 5 adversarial
+tests proving fabricated future/stale timestamps cannot change betting access or force a
+payout (see [Authenticated clock design](#authenticated-clock-design)).
 
 ## Deployed addresses
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0xb28225714cb7C087d30F3168d241d094Bcd8a03A` (GenLayer StudioNet) |
-| Backend API | https://eventweaver-api.fly.dev |
+| Intelligent Contract | `0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2` (GenLayer StudioNet) |
+| Backend API | https://eventweaver-api-prod.fly.dev (Fly app `eventweaver-api-prod` + Postgres `eventweaver-db-prod`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |
+
+> The backend and its database were migrated to a fresh Fly.io account/app
+> (`eventweaver-api-prod` / `eventweaver-db-prod`) after the original account was retired.
+> Market/activity history was carried over via `pg_dump`/`pg_restore`; the indexer now prunes
+> any cached rows outside the live contract's id range on every sync cycle, so a future
+> contract swap can never leave stale "ghost" markets stakeable in the public feed.
+
+## Authenticated clock design
+
+Every state-changing method used to accept a caller-supplied `now_ts: int` argument that
+drove staking windows, adjudication rights, expiry, and settlement — a transaction sender
+could pass a fabricated future or stale timestamp to manipulate any of them. This has been
+replaced with an internal `_now_ts()` that reads `datetime.datetime.now()`, which GenVM
+patches to the network's consensus-agreed block time for every validator identically. No
+caller, including the market creator or platform owner, can influence it.
+
+Five adversarial tests in [tests/direct/test_event_weaver.py](tests/direct/test_event_weaver.py)
+prove fabricated timestamps can no longer change betting access or force a payout — see
+[review.md](review.md) for the full writeup (problem, fix, and verification).
 
 ## Path forward
 
@@ -301,11 +326,12 @@ frontend/src/
   pages/                       Landing, Markets, MarketDetail, Create, Portfolio
   components/                  Nav, Footer, MarketCard, ChainViz, Chips, Toast, Walkthrough, Logo
   lib/                         wallet (genlayer-js + MetaMask), api client, types
-tests/direct/                  24 in-memory contract tests (gltest.direct)
+tests/direct/                  29 in-memory contract tests (gltest.direct)
 docs/                          ARCHITECTURE · API · CONTRACT · DEPLOYMENT · images/
 .github/workflows/ci.yml       lint + tests + builds
 MEMORY.md                      living decision log
 SUBMISSION.md                  review submission summary
+review.md                      authenticated-clock fix: request, root cause, fix, tests
 ```
 
 ## Hard-won GenLayer lessons
@@ -321,6 +347,15 @@ Documented in [MEMORY.md](MEMORY.md) so nobody re-learns them the hard way. High
   all web/LLM results; `strict_eq` on non-deterministic output guarantees consensus failure.
 - The CLI has no `--value` flag — payable calls go through genlayer-js
   (`writeContract({ …, value })`), and amounts must be BigInt, not strings.
+- `datetime.datetime.now()` inside a contract is GenVM's authenticated block clock, patched
+  identically for every validator — never accept a `now_ts`-style argument from calldata for
+  anything time-gated; read it internally instead (see
+  [Authenticated clock design](#authenticated-clock-design)).
+- Fly Postgres (legacy Nomad and flex) does not terminate TLS on its private-network
+  connections — the WireGuard mesh is the transport encryption. Forcing
+  `ssl: { rejectUnauthorized: false }` on every non-`localhost` connection string breaks the
+  DB silently (falls back to an in-memory mirror); only enable TLS when the URL explicitly
+  requests it (`?sslmode=require`).
 
 ---
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useWallet, contractWrite, nowTs } from '../lib/wallet';
+import { useWallet, contractWrite } from '../lib/wallet';
 import { useToast } from '../components/Toast';
 
 interface StepDraft {
@@ -64,7 +64,6 @@ export default function Create() {
         category,
         JSON.stringify(stepsPayload),
         Math.floor(new Date(deadline).getTime() / 1000),
-        nowTs(),
         confidence,
       ]);
       push('success', 'Market deployed on-chain. Redirecting to discovery…');

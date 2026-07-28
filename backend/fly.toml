@@ -1,5 +1,5 @@
 # EventWeaver API — 24/7 availability configuration.
-app = "eventweaver-api"
+app = "eventweaver-api-prod"
 primary_region = "iad"
 
 [build]

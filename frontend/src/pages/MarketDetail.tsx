@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Market, ChainStep, ActivityEvent, Position } from '../lib/types';
 import { StatusChip, StepChip, CategoryChip } from '../components/Chips';
-import { useWallet, contractWrite, formatGen, parseGen, nowTs } from '../lib/wallet';
+import { useWallet, contractWrite, formatGen, parseGen } from '../lib/wallet';
 import { useToast } from '../components/Toast';
 
 /** Market detail — the Causal Chain View: nodes, reasoning, trading panel. */
@@ -29,7 +29,7 @@ export default function MarketDetail() {
         try {
           const pos = (await readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0xb28225714cb7C087d30F3168d241d094Bcd8a03A') as `0x${string}`,
+              '0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
           })) as unknown;
@@ -62,21 +62,21 @@ export default function MarketDetail() {
   const stake = (side: 'yes' | 'no') =>
     act(
       `stake_${side}`,
-      () => contractWrite(client!, side === 'yes' ? 'stake_yes' : 'stake_no', [marketId, nowTs()], parseGen(amount)),
+      () => contractWrite(client!, side === 'yes' ? 'stake_yes' : 'stake_no', [marketId], parseGen(amount)),
       `Staked ${amount} GEN on ${side.toUpperCase()} — value transferred on-chain.`
     );
 
   const requestResolution = () =>
     act(
       'resolve',
-      () => contractWrite(client!, 'request_resolution', [marketId, nowTs()]),
+      () => contractWrite(client!, 'request_resolution', [marketId]),
       'Adjudication pass submitted — validators are fetching evidence.'
     );
 
   const claim = () =>
     act(
       'claim',
-      () => contractWrite(client!, 'claim', [marketId, nowTs()]),
+      () => contractWrite(client!, 'claim', [marketId]),
       'Winnings claimed to your balance. Withdraw from Portfolio to move tokens to your wallet.'
     );
 

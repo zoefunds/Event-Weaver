@@ -39,7 +39,7 @@ move through payable stakes, claims, and withdrawals.
 - Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. Never `strict_eq` for web/LLM output.
 
 ## Deployed state (live)
-- **Contract (StudioNet)**: `0xb28225714cb7C087d30F3168d241d094Bcd8a03A` (OWNER-deployed; owner wallet `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb`). Seeded with 2 demo markets; verified: create, payable stake, deposit/withdraw, live web adjudication (MAJORITY_AGREE, no rotation).
+- **Contract (StudioNet)**: `0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2` (OWNER-deployed; owner wallet `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb`). Seeded with 2 demo markets; verified: create, payable stake, deposit/withdraw, live web adjudication (MAJORITY_AGREE, no rotation).
 - **Backend**: https://eventweaver-api.fly.dev (Fly app `eventweaver-api` + Postgres `eventweaver-db`, iad, 24/7). Secrets: `CONTRACT_ADDRESS`, `DATABASE_URL`, `CORS_ORIGINS`.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`, scope adebiyi2002gmailcoms-projects; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).

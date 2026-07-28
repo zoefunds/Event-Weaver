@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Portfolio as PortfolioData } from '../lib/types';
-import { useWallet, contractWrite, formatGen, parseGen, nowTs } from '../lib/wallet';
+import { useWallet, contractWrite, formatGen, parseGen } from '../lib/wallet';
 import { StatusChip } from '../components/Chips';
 import { useToast } from '../components/Toast';
 
@@ -35,7 +35,7 @@ export default function Portfolio() {
     if (!client) return connect();
     setBusy(`claim-${marketId}`);
     try {
-      await contractWrite(client, 'claim', [marketId, nowTs()]);
+      await contractWrite(client, 'claim', [marketId]);
       push('success', 'Claimed — winnings credited to your withdrawable balance.');
       await refresh();
     } catch (e) {

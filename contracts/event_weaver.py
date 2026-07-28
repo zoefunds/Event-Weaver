@@ -1,5 +1,6 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
+import datetime
 import json
 import typing
 from dataclasses import dataclass
@@ -424,6 +425,14 @@ class EventWeaver(gl.Contract):
         if gl.message.sender_address != self.owner:
             raise gl.vm.UserError(ERR_EXPECTED + "only the owner may call this")
 
+    def _now_ts(self) -> int:
+        """Authenticated, consensus-agreed clock. GenVM patches
+        datetime.now() to the network's block time, which every validator
+        computes identically — it is never read from caller-supplied
+        arguments or calldata, so it cannot be spoofed by a transaction
+        sender to fabricate a future or stale time."""
+        return int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+
     def _require_adjudication_rights(self, market: Market, now_ts: int) -> None:
         """Adjudication policy: before the market deadline only the market
         creator or the platform owner may trigger step checks (progressive
@@ -792,7 +801,6 @@ Rules:
         category: str,
         steps_json: str,
         deadline_ts: int,
-        now_ts: int,
         confidence_floor: int = DEFAULT_CONFIDENCE_FLOOR,
     ) -> int:
         """Create a causal-chain market. Attach at least `min_creation_bond`
@@ -803,8 +811,6 @@ Rules:
             steps_json: JSON array of {"description": str, "sources": [url,...]}
                 objects, ordered — the causal chain. 2..12 steps.
             deadline_ts: unix time after which an unresolved chain expires.
-            now_ts: caller-supplied current unix time (frontends pass
-                Date.now()/1000; validators only require it to be sane).
             confidence_floor: 55..95, per-step confidence needed to flip a
                 step's state.
 
@@ -813,13 +819,13 @@ Rules:
         self._not_paused()
         sender = gl.message.sender_address
         bond = int(gl.message.value)
+        now_ts = self._now_ts()
 
         _require(bond >= int(self.min_creation_bond), "creation bond below minimum")
         _require(0 < len(title.strip()) <= MAX_TITLE_LEN, f"title must be 1..{MAX_TITLE_LEN} chars")
         _require(len(description) <= MAX_DESCRIPTION_LEN, f"description exceeds {MAX_DESCRIPTION_LEN} chars")
         _require(0 < len(category.strip()) <= MAX_CATEGORY_LEN, "category required")
         _require(deadline_ts > now_ts, "deadline must be in the future")
-        _require(now_ts > 0, "now_ts must be a positive unix timestamp")
 
         floor = _clamp_int(int(confidence_floor), MIN_CONFIDENCE_FLOOR, MAX_CONFIDENCE_FLOOR)
 
@@ -899,9 +905,10 @@ Rules:
         self._log(market_id, "CREATE", sender, bond, now_ts, title.strip()[:100])
         return market_id
 
-    def _stake(self, market_id: int, side: int, amount: int, now_ts: int) -> None:
+    def _stake(self, market_id: int, side: int, amount: int) -> None:
         """Shared staking core for payable and balance-funded stakes."""
         self._not_paused()
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         _require(
             int(market.status) in (STATUS_OPEN, STATUS_RESOLVING),
@@ -930,19 +937,19 @@ Rules:
         self._log(market_id, kind, sender, amount, now_ts, "")
 
     @gl.public.write.payable
-    def stake_yes(self, market_id: int, now_ts: int) -> None:
+    def stake_yes(self, market_id: int) -> None:
         """Stake attached native value on the full chain occurring.
         This IS a real value transfer: the chain moves gl.message.value from
         the caller into the contract before this body runs."""
-        self._stake(market_id, SIDE_YES, int(gl.message.value), now_ts)
+        self._stake(market_id, SIDE_YES, int(gl.message.value))
 
     @gl.public.write.payable
-    def stake_no(self, market_id: int, now_ts: int) -> None:
+    def stake_no(self, market_id: int) -> None:
         """Stake attached native value on the chain NOT fully occurring."""
-        self._stake(market_id, SIDE_NO, int(gl.message.value), now_ts)
+        self._stake(market_id, SIDE_NO, int(gl.message.value))
 
     @gl.public.write
-    def stake_from_balance(self, market_id: int, side: str, amount: int, now_ts: int) -> None:
+    def stake_from_balance(self, market_id: int, side: str, amount: int) -> None:
         """Stake using previously deposited / won internal balance instead of
         attaching new value."""
         sender = gl.message.sender_address
@@ -960,7 +967,6 @@ Rules:
             market_id,
             SIDE_YES if side_normalized == "YES" else SIDE_NO,
             amount,
-            now_ts,
         )
 
     # ========================================================================
@@ -994,13 +1000,14 @@ Rules:
         self._send_native(sender, amount)
 
     @gl.public.write
-    def claim(self, market_id: int, now_ts: int) -> int:
+    def claim(self, market_id: int) -> int:
         """After terminal resolution, claim winnings: the caller's winning
         stake back plus a pro-rata share of the losing pool (after fees).
         Credits the internal balance; call withdraw() to move tokens out.
 
         Returns the credited amount.
         """
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         status = int(market.status)
         _require(
@@ -1027,8 +1034,9 @@ Rules:
         return payout
 
     @gl.public.write
-    def refund_cancelled(self, market_id: int, now_ts: int) -> int:
+    def refund_cancelled(self, market_id: int) -> int:
         """Reclaim full stakes from a cancelled market. Returns amount credited."""
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         _require(int(market.status) == STATUS_CANCELLED, "market is not cancelled")
         sender = gl.message.sender_address
@@ -1044,10 +1052,11 @@ Rules:
         return refund
 
     @gl.public.write
-    def cancel_market(self, market_id: int, now_ts: int) -> None:
+    def cancel_market(self, market_id: int) -> None:
         """Cancel an open market. Creator may cancel only while it has no
         stakes; the owner may cancel any open/resolving market (stakes become
         refundable, bond returned)."""
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         sender = gl.message.sender_address
         status = int(market.status)
@@ -1068,7 +1077,7 @@ Rules:
     # ========================================================================
 
     @gl.public.write
-    def check_step(self, market_id: int, step_index: int, now_ts: int) -> dict:
+    def check_step(self, market_id: int, step_index: int) -> dict:
         """Adjudicate a single chain step against live web evidence.
 
         Anyone may call this — resolution is permissionless. The step's
@@ -1079,6 +1088,7 @@ Rules:
         Returns the step's post-adjudication view dict.
         """
         self._not_paused()
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not resolvable")
@@ -1129,7 +1139,7 @@ Rules:
         return self._step_dict(step, step_index)
 
     @gl.public.write
-    def request_resolution(self, market_id: int, now_ts: int) -> dict:
+    def request_resolution(self, market_id: int) -> dict:
         """Run a full adjudication pass over the chain: walks steps in order,
         adjudicating each pending step until one fails to fulfill (chain
         order matters). Finalizes if the chain becomes decided.
@@ -1137,6 +1147,7 @@ Rules:
         Returns the market view dict after the pass.
         """
         self._not_paused()
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not resolvable")
@@ -1184,9 +1195,10 @@ Rules:
         return self._market_dict(market, include_steps=True)
 
     @gl.public.write
-    def expire_market(self, market_id: int, now_ts: int) -> None:
+    def expire_market(self, market_id: int) -> None:
         """Deterministically expire a market whose deadline passed without the
         full chain being verified. NO side wins. Anyone may call."""
+        now_ts = self._now_ts()
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not expirable")

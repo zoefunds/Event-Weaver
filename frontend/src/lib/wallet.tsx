@@ -19,7 +19,7 @@ import type { GenLayerClient } from 'genlayer-js/types';
  */
 
 export const CONTRACT_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS ??
-  '0xb28225714cb7C087d30F3168d241d094Bcd8a03A') as `0x${string}`;
+  '0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2') as `0x${string}`;
 
 interface EthereumProvider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
@@ -204,8 +204,4 @@ export async function contractWrite(
     interval: 3000,
     retries: 60,
   });
-}
-
-export function nowTs(): number {
-  return Math.floor(Date.now() / 1000);
 }

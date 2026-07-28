@@ -1,5 +1,5 @@
 import { readContract, plain } from './genlayer.js';
-import { upsertMarket, insertActivity, saveStats } from './db.js';
+import { upsertMarket, insertActivity, saveStats, pruneMarketsAbove } from './db.js';
 import { config } from './config.js';
 
 /**
@@ -35,6 +35,12 @@ async function syncOnce(logger) {
       logger.warn({ err: err.message, id }, 'failed to index market (skipping)');
     }
   }
+  // Drop any cached rows outside the live contract's id range — e.g. stale
+  // markets left behind by a database that previously mirrored a different
+  // contract deployment. Without this, retired ids keep showing up as
+  // stakeable in the public feed even though the contract has no such market.
+  await pruneMarketsAbove(count);
+
   indexerState.marketsIndexed = count;
   indexerState.lastSyncAt = new Date().toISOString();
   indexerState.lastError = null;

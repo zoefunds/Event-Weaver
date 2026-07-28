@@ -69,8 +69,8 @@ cyberpunk cliché beyond what the product itself already uses.
 
 ## Evidence available
 - Live deployed app: https://eventweaver-orpin.vercel.app
-- Live backend health endpoint: https://eventweaver-api.fly.dev/health
-- Deployed contract address on StudioNet: `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80`
+- Live backend health endpoint: https://eventweaver-api-prod.fly.dev/health
+- Deployed contract address on StudioNet: `0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2`
 - Screenshots: `docs/images/landing.png`, `discovery.png`, `market-detail.png`,
   `create-market.png`, `walkthrough.png`
 - README architecture/lifecycle diagrams, `docs/CONTRACT.md`, `docs/ARCHITECTURE.md`

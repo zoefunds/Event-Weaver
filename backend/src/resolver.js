@@ -66,7 +66,7 @@ async function resolveDueMarkets(logger) {
       const hash = await client.writeContract({
         address: config.contractAddress,
         functionName: 'request_resolution',
-        args: [id, now],
+        args: [id],
         value: 0n,
       });
       await client.waitForTransactionReceipt({

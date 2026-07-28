@@ -24,7 +24,12 @@ export async function initDb(logger) {
   pool = new pg.Pool({
     connectionString: config.databaseUrl,
     max: 10,
-    ssl: config.databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+    // Fly Postgres (both legacy Nomad and flex) does not terminate TLS on
+    // its private-network connections — the WireGuard mesh is the transport
+    // encryption. Only opt into TLS when the URL explicitly asks for it.
+    ssl: /[?&]sslmode=require\b/.test(config.databaseUrl)
+      ? { rejectUnauthorized: false }
+      : false,
   });
   pool.on('error', (err) => logger.error({ err }, 'pg pool error (recovered)'));
 
@@ -94,6 +99,24 @@ export async function insertActivity(marketId, rows) {
       [marketId, r.kind, r.actor, r.amount, r.ts, r.note ?? '']
     );
   }
+}
+
+/** Drop cached markets/activity whose id is no longer part of the live
+ * contract's range (e.g. leftover rows from a prior contract deployment
+ * pointed at by this same database). `count` is the current on-chain
+ * market_count — valid ids are [0, count). */
+export async function pruneMarketsAbove(count) {
+  if (!pool) {
+    for (const id of memory.markets.keys()) {
+      if (id >= count) memory.markets.delete(id);
+    }
+    for (const id of memory.activity.keys()) {
+      if (id >= count) memory.activity.delete(id);
+    }
+    return;
+  }
+  await pool.query('DELETE FROM activity WHERE market_id >= $1', [count]);
+  await pool.query('DELETE FROM markets WHERE id >= $1', [count]);
 }
 
 export async function saveStats(stats) {

@@ -7,7 +7,7 @@
 | Live app | https://eventweaver-orpin.vercel.app |
 | Backend API (health check) | https://eventweaver-api.fly.dev/health |
 | Full source code | https://github.com/zoefunds/Event-Weaver |
-| Intelligent Contract address (GenLayer StudioNet) | `0xa91447f7609aFA2B4dc81D1eBF6d1F67bec1bB80` |
+| Intelligent Contract address (GenLayer StudioNet) | `0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2` |
 
 ## What it does, in plain terms
 
