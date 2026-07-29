@@ -30,9 +30,10 @@
 12. [Testing & quality gates](#testing--quality-gates)
 13. [Deployed addresses](#deployed-addresses)
 14. [Authenticated clock design](#authenticated-clock-design)
-15. [Path forward](#path-forward)
-16. [Project structure](#project-structure)
-17. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
+15. [Reliability: stale builds & RPC rate limits](#reliability-stale-builds--rpc-rate-limits)
+16. [Path forward](#path-forward)
+17. [Project structure](#project-structure)
+18. [Hard-won GenLayer lessons](#hard-won-genlayer-lessons)
 
 ---
 
@@ -188,10 +189,15 @@ Reference: [docs/CONTRACT.md](docs/CONTRACT.md)
 `backend/` — Express + genlayer-js + Fly Postgres. **This process must never die**:
 
 - Uncaught exceptions and unhandled rejections are logged, not fatal.
-- The indexer (15s) and resolver (60s) loops self-heal with backoff.
+- The indexer (45s) and resolver (60s) loops self-heal with backoff.
 - Fly.io: `auto_stop_machines = "off"`, `min_machines_running = 1`, restart policy
   `always`, HTTP health checks against `/health` (reports db, indexer lag, resolver stats).
 - Works without a database too (in-memory mirror) for zero-config local dev.
+- **RPC budget discipline**: StudioNet's RPC caps at 30 requests/minute, shared across the
+  indexer, resolver, and every live-reading route. `readContract` retries rate-limit errors
+  with backoff; `/api/config` and `/api/portfolio/:address` are short-TTL cached so repeated
+  or near-instant reloads cost zero extra chain reads; the indexer's poll interval is tuned
+  to leave headroom under the cap rather than exhaust it on its own.
 
 Endpoints: markets (list/detail/live/activity/resolution), portfolio (positions, quotes,
 balance, notifications), stats, config, health — see [docs/API.md](docs/API.md).
@@ -211,6 +217,11 @@ balance, notifications), stats, config, health — see [docs/API.md](docs/API.md
   Adjudication Purple `#571bc1`, Emerald `#4edea3`; Geist / Inter / JetBrains Mono;
   custom woven-chain logo and favicon.
 - **Onboarding**: first-visit walkthrough (suppress with `?tour=0`).
+- **Stale-build self-healing**: a tab left open across a backend/contract migration keeps
+  running whatever config was baked into its JS bundle — including a now-dead API URL. Every
+  tab polls for a new build in the background and, once confirmed, clears
+  `localStorage`/`sessionStorage` and reloads automatically (`lib/versionCheck.ts`), instead
+  of failing silently forever with no signal to the user.
 
 ## Running locally
 
@@ -302,6 +313,26 @@ Five adversarial tests in [tests/direct/test_event_weaver.py](tests/direct/test_
 prove fabricated timestamps can no longer change betting access or force a payout — see
 [review.md](review.md) for the full writeup (problem, fix, and verification).
 
+## Reliability: stale builds & RPC rate limits
+
+Two related classes of failure surfaced as "Failed to fetch" / "Could not load portfolio"
+errors after the account migration, both now fixed:
+
+- **Stale tabs after a backend/contract move.** A tab left open across a migration keeps
+  running the JS bundle (and hardcoded config) it loaded with — including an API URL that no
+  longer resolves once the old host is retired. Every tab now polls in the background for a
+  new build and, once confirmed, clears `localStorage`/`sessionStorage` and reloads
+  automatically (`frontend/src/lib/versionCheck.ts`), so a stale tab self-heals within
+  minutes instead of failing forever with no explanation.
+- **StudioNet's RPC rate limit (30 req/min).** The indexer's own polling was already
+  exceeding this on its own; a page reload firing config/stats/markets/portfolio
+  concurrently — portfolio alone costing 2 + 3×positions live reads — could tip it over
+  and surface as a hard failure on an ordinary reload. Fixed with retry-with-backoff on
+  rate-limit errors, short-TTL caching on `/api/config` and `/api/portfolio/:address`, and a
+  slower indexer poll interval that leaves real headroom under the cap.
+
+Full writeup: [review2.md](review2.md).
+
 ## Path forward
 
 - **Testnet / mainnet**: move from StudioNet to a funded GenLayer testnet, then mainnet, once
@@ -325,13 +356,14 @@ backend/src/
 frontend/src/
   pages/                       Landing, Markets, MarketDetail, Create, Portfolio
   components/                  Nav, Footer, MarketCard, ChainViz, Chips, Toast, Walkthrough, Logo
-  lib/                         wallet (genlayer-js + MetaMask), api client, types
+  lib/                         wallet (genlayer-js + MetaMask), api client, types, versionCheck (stale-build reload)
 tests/direct/                  29 in-memory contract tests (gltest.direct)
 docs/                          ARCHITECTURE · API · CONTRACT · DEPLOYMENT · images/
 .github/workflows/ci.yml       lint + tests + builds
 MEMORY.md                      living decision log
 SUBMISSION.md                  review submission summary
 review.md                      authenticated-clock fix: request, root cause, fix, tests
+review2.md                     "Failed to fetch" fix: stale-build detection, RPC rate-limit hardening
 ```
 
 ## Hard-won GenLayer lessons
