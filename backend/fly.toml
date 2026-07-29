@@ -8,7 +8,12 @@ primary_region = "iad"
 [env]
   NODE_ENV = "production"
   PORT = "8080"
-  POLL_INTERVAL_MS = "15000"
+  # StudioNet's RPC caps at 30 requests/minute. The indexer costs
+  # 2 + 2×markets reads per cycle — at 15s that alone exceeded the cap with
+  # zero user traffic (chronic self-inflicted rate-limiting). 45s leaves
+  # headroom for the resolver and real user requests (portfolio, live
+  # market reads) to actually succeed.
+  POLL_INTERVAL_MS = "45000"
 
 [http_service]
   internal_port = 8080

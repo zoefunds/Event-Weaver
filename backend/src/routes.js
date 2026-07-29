@@ -87,12 +87,29 @@ router.get('/api/markets/:id/resolution', asyncRoute(async (req, res) => {
   }
 }));
 
-/** Portfolio: positions + quotes + balance + notifications for an address. */
+/** Portfolio: positions + quotes + balance + notifications for an address.
+ *
+ * The single most RPC-expensive route — 2 + 3×positions live reads in one
+ * request, against the same 30 req/min StudioNet budget every other route
+ * and the background indexer/resolver share. A short per-address cache
+ * absorbs the extremely common case of a reload firing this twice in quick
+ * succession (React effects, a double-click reconnect, a second tab) —
+ * exactly the shape of request that would otherwise burn budget for no new
+ * information. */
+const PORTFOLIO_CACHE_TTL_MS = 10 * 1000;
+const portfolioCache = new Map(); // address (lowercase) -> { at, data }
+
 router.get('/api/portfolio/:address', asyncRoute(async (req, res) => {
   const address = req.params.address;
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return res.status(400).json({ error: 'invalid address' });
   }
+  const key = address.toLowerCase();
+  const cached = portfolioCache.get(key);
+  if (cached && Date.now() - cached.at < PORTFOLIO_CACHE_TTL_MS) {
+    return res.json(cached.data);
+  }
+
   const [marketIdsRaw, balanceRaw] = await Promise.all([
     readContract('get_user_market_ids', [address]),
     readContract('get_balance_of', [address]),
@@ -110,18 +127,34 @@ router.get('/api/portfolio/:address', asyncRoute(async (req, res) => {
     } catch { /* skip unreadable position */ }
   }
   const notifications = await getActorActivity(address, 25);
-  res.json({ address, balance: plain(balanceRaw), positions, notifications });
+  const data = { address, balance: plain(balanceRaw), positions, notifications };
+  portfolioCache.set(key, { at: Date.now(), data });
+  res.json(data);
 }));
 
 router.get('/api/stats', asyncRoute(async (_req, res) => {
   res.json(await getStats());
 }));
 
+// Chain config and categories are effectively static (admin-only, rarely
+// touched) but every page load was re-fetching both live from the chain —
+// pure overhead against the same 30 req/min RPC budget every other route
+// shares. Cache briefly so routine page loads cost 0 RPC reads.
+const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
+let configCache = null; // { at, chainConfig, categories }
+
 router.get('/api/config', asyncRoute(async (_req, res) => {
+  if (!configCache || Date.now() - configCache.at > CONFIG_CACHE_TTL_MS) {
+    const [chainConfig, categories] = await Promise.all([
+      readContract('get_config').then(plain),
+      readContract('get_categories').then(plain),
+    ]);
+    configCache = { at: Date.now(), chainConfig, categories };
+  }
   res.json({
     contractAddress: config.contractAddress,
     network: 'studionet',
-    chainConfig: plain(await readContract('get_config')),
-    categories: plain(await readContract('get_categories')),
+    chainConfig: configCache.chainConfig,
+    categories: configCache.categories,
   });
 }));
