@@ -7,6 +7,7 @@ import { config, assertConfig } from './config.js';
 import { initDb } from './db.js';
 import { startIndexer } from './indexer.js';
 import { startResolver } from './resolver.js';
+import { startBaseRelay } from './baseSepolia.js';
 import { router } from './routes.js';
 
 /**
@@ -65,6 +66,7 @@ async function main() {
 
   startIndexer(logger);
   startResolver(logger);
+  startBaseRelay(logger);
 
   // Graceful drain on deploy-driven restarts; Fly restarts us immediately.
   for (const sig of ['SIGTERM', 'SIGINT']) {

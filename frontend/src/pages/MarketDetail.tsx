@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Market, ChainStep, ActivityEvent, Position } from '../lib/types';
 import { StatusChip, StepChip, CategoryChip } from '../components/Chips';
-import { useWallet, contractWrite, formatGen, parseGen } from '../lib/wallet';
+import { CONTRACT_ADDRESS, useWallet, contractWrite } from '../lib/wallet';
+import { claimUsdc, depositStakeUsdc, formatUsdc, parseUsdc } from '../lib/baseSepolia';
 import { useToast } from '../components/Toast';
 
 /** Market detail — the Causal Chain View: nodes, reasoning, trading panel. */
@@ -16,25 +17,38 @@ export default function MarketDetail() {
   const [market, setMarket] = useState<Market | null>(null);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [position, setPosition] = useState<Position | null>(null);
+  const [baseClaimable, setBaseClaimable] = useState<bigint>(0n);
   const [amount, setAmount] = useState('0.1');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
     try {
+      const backendConfig = await api.config();
+      if (backendConfig.contractAddress?.toLowerCase() !== CONTRACT_ADDRESS.toLowerCase()) {
+        throw new Error('V1 backend upgrade is pending. Staking is temporarily disabled to prevent using stale market data.');
+      }
       const m = await api.marketLive(marketId).catch(() => api.market(marketId));
       setMarket(m);
       api.activity(marketId).then(setActivity).catch(() => {});
       if (address) {
         try {
-          const pos = (await readClient.readContract({
+          const [pos, portfolio] = await Promise.all([
+            readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2') as `0x${string}`,
+              '0x96727fd9E35036903B89829E1349dB5A83e7c48f') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
-          })) as unknown;
+            }),
+            api.portfolio(address),
+          ]);
           setPosition(plainPos(pos));
+          const entry = portfolio.positions.find((item) => item.market_id === marketId);
+          setBaseClaimable(BigInt(entry?.quote?.claimable ?? 0));
         } catch { /* ignore */ }
+      } else {
+        setPosition(null);
+        setBaseClaimable(0n);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -62,8 +76,12 @@ export default function MarketDetail() {
   const stake = (side: 'yes' | 'no') =>
     act(
       `stake_${side}`,
-      () => contractWrite(client!, side === 'yes' ? 'stake_yes' : 'stake_no', [marketId], parseGen(amount)),
-      `Staked ${amount} GEN on ${side.toUpperCase()} — value transferred on-chain.`
+      async () => {
+        const units = parseUsdc(amount);
+        await depositStakeUsdc(marketId, units);
+        return contractWrite(client!, side === 'yes' ? 'stake_yes' : 'stake_no', [marketId, units]);
+      },
+      `Staked ${amount} USDC on ${side.toUpperCase()} via Base Sepolia escrow.`
     );
 
   const requestResolution = () =>
@@ -76,8 +94,8 @@ export default function MarketDetail() {
   const claim = () =>
     act(
       'claim',
-      () => contractWrite(client!, 'claim', [marketId]),
-      'Winnings claimed to your balance. Withdraw from Portfolio to move tokens to your wallet.'
+      () => claimUsdc(marketId),
+      'USDC claim submitted on Base Sepolia.'
     );
 
   if (error) {
@@ -98,11 +116,7 @@ export default function MarketDetail() {
   const prob = (market.implied_yes_bps / 100).toFixed(1);
   const steps: ChainStep[] = market.steps ?? [];
   const isTerminal = ['RESOLVED_YES', 'RESOLVED_NO', 'EXPIRED', 'CANCELLED'].includes(market.status);
-  const winningSide =
-    market.status === 'RESOLVED_YES' ? 'yes' : market.status === 'RESOLVED_NO' || market.status === 'EXPIRED' ? 'no' : null;
-  const canClaim =
-    position && !position.claimed && winningSide &&
-    ((winningSide === 'yes' && position.yes_amount > 0) || (winningSide === 'no' && position.no_amount > 0));
+  const canClaim = baseClaimable > 0n;
   const deadlinePassed = Date.now() / 1000 > market.deadline_ts;
   // Contract policy: pre-deadline adjudication is creator-only; post-deadline
   // it is permissionless (and the backend auto-triggers it anyway).
@@ -165,7 +179,7 @@ export default function MarketDetail() {
                     </span>
                   </div>
                   <p className="text-xs text-on-surface" style={{ fontFamily: 'var(--font-mono)' }}>
-                    {a.actor.slice(0, 10)}… {Number(a.amount) > 0 && `· ${formatGen(a.amount, 3)} GEN`} {a.note && `· ${a.note}`}
+                    {a.actor.slice(0, 10)}… {Number(a.amount) > 0 && `· ${formatUsdc(a.amount, 3)} USDC`} {a.note && `· ${a.note}`}
                   </p>
                 </div>
               ))}
@@ -184,17 +198,17 @@ export default function MarketDetail() {
             <div className="mb-6 grid grid-cols-2 gap-3 text-center">
               <div className="rounded-lg border border-tertiary/40 bg-tertiary/10 p-3">
                 <div className="label-caps text-tertiary">Yes pool</div>
-                <div className="font-bold text-tertiary">{formatGen(market.yes_pool, 2)} GEN</div>
+                <div className="font-bold text-tertiary">{formatUsdc(market.yes_pool, 2)} USDC</div>
               </div>
               <div className="rounded-lg border border-error/40 bg-error/10 p-3">
                 <div className="label-caps text-error">No pool</div>
-                <div className="font-bold text-error">{formatGen(market.no_pool, 2)} GEN</div>
+                <div className="font-bold text-error">{formatUsdc(market.no_pool, 2)} USDC</div>
               </div>
             </div>
 
             {market.status === 'OPEN' && (
               <>
-                <label className="label-caps mb-2 block text-on-variant">Amount (GEN)</label>
+                <label className="label-caps mb-2 block text-on-variant">Amount (USDC)</label>
                 <input
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
@@ -249,7 +263,7 @@ export default function MarketDetail() {
                 disabled={!!busy}
                 className="mt-4 w-full rounded-xl bg-tertiary py-4 font-bold text-on-tertiary transition-all hover:scale-[1.01] active:scale-95 disabled:opacity-50"
               >
-                {busy === 'claim' ? 'Claiming…' : 'CLAIM WINNINGS'}
+                {busy === 'claim' ? 'Claiming…' : `CLAIM ${formatUsdc(baseClaimable, 3)} USDC`}
               </button>
             )}
 
@@ -257,13 +271,13 @@ export default function MarketDetail() {
               <div className="mt-6 space-y-2 border-t border-white/5 pt-4 text-sm">
                 <div className="flex justify-between">
                   <span className="text-on-variant">Your YES stake</span>
-                  <span className="text-tertiary">{formatGen(position.yes_amount, 3)} GEN</span>
+                  <span className="text-tertiary">{formatUsdc(position.yes_amount, 3)} USDC</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-on-variant">Your NO stake</span>
-                  <span className="text-error">{formatGen(position.no_amount, 3)} GEN</span>
+                  <span className="text-error">{formatUsdc(position.no_amount, 3)} USDC</span>
                 </div>
-                {position.claimed && <div className="label-caps text-outline">Claimed ✓</div>}
+                {isTerminal && baseClaimable === 0n && <div className="label-caps text-outline">No Base USDC claim available</div>}
               </div>
             )}
           </div>

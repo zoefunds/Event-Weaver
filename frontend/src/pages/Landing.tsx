@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import type { PlatformStats } from '../lib/types';
-import { formatGen } from '../lib/wallet';
+import { formatUsdc } from '../lib/baseSepolia';
 
 /** Landing — hero with animated causal chain, explainer, features, CTA. */
 export default function Landing() {
@@ -86,7 +86,7 @@ export default function Landing() {
         <section className="border-y border-white/5 bg-[#0e0e0f] px-5 py-8 md:px-16">
           <div className="mx-auto grid max-w-5xl grid-cols-2 gap-6 md:grid-cols-4">
             <Stat label="Markets woven" value={String(stats.market_count ?? 0)} />
-            <Stat label="Total staked" value={`${formatGen(stats.total_volume ?? 0, 2)} GEN`} />
+            <Stat label="Total staked" value={`${formatUsdc(stats.total_volume ?? 0, 2)} USDC`} />
             <Stat label="Stake actions" value={String(stats.total_stakes ?? 0)} />
             <Stat label="Chains resolved" value={String(stats.total_resolved ?? 0)} />
           </div>
@@ -121,7 +121,7 @@ export default function Landing() {
               <Feature
                 icon="↯"
                 title="Real value transfer"
-                text="Stakes are native token transfers into the contract; winnings flow back out on-chain when you withdraw."
+                text="Stakes are USDC deposits on Base Sepolia; finalized payouts are self-claimed from escrow."
                 tint="text-secondary bg-secondary/10"
               />
             </div>

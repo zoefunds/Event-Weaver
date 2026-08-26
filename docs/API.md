@@ -1,6 +1,6 @@
 # EventWeaver Backend API
 
-Base URL: `https://eventweaver-api.fly.dev` (production) or `http://localhost:8080`.
+Base URL: `https://eventweaver-api-prod.fly.dev` (production) or `http://localhost:8080`.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -10,7 +10,7 @@ Base URL: `https://eventweaver-api.fly.dev` (production) or `http://localhost:80
 | GET | `/api/markets/:id/live` | Live-from-chain market read |
 | GET | `/api/markets/:id/activity` | Recent activity events |
 | GET | `/api/markets/:id/resolution` | Full resolution report with per-step reasoning |
-| GET | `/api/portfolio/:address` | Positions + payout quotes + balance + notifications |
+| GET | `/api/portfolio/:address` | Positions, historical GenLayer payout quotes, live Base escrow claimability, balance, and notifications. May include `stale: true` during a temporary StudioNet throttle. |
 | GET | `/api/stats` | Platform stats (volume, stakes, resolved) |
 | GET | `/api/config` | Contract address, chain config, categories |
 
@@ -18,15 +18,13 @@ All writes happen client-side via genlayer-js against the Intelligent Contract:
 
 | Contract method | Payable | Purpose |
 | --- | --- | --- |
-| `create_market(title, description, category, steps_json, deadline_ts, now_ts, confidence_floor)` | yes (bond) | Create a chain market |
-| `stake_yes(market_id, now_ts)` / `stake_no(...)` | **yes** | Stake native value |
-| `deposit()` | **yes** | Fund internal balance |
-| `stake_from_balance(market_id, side, amount, now_ts)` | no | Stake from balance |
-| `request_resolution(market_id, now_ts)` | no | Full chain adjudication pass |
-| `check_step(market_id, step_index, now_ts)` | no | Single-step adjudication |
-| `claim(market_id, now_ts)` | no | Claim winnings to balance |
-| `withdraw(amount)` | no | **Native transfer out** to caller |
-| `refund_cancelled(market_id, now_ts)` | no | Refund from cancelled market |
+| `create_market(title, description, category, steps_json, deadline_ts, confidence_floor)` | no | Create a chain market |
+| `stake_yes(market_id, amount)` / `stake_no(...)` | no | Record a Base Sepolia USDC stake (amount in 6-decimal USDC units) |
+| `request_resolution(market_id)` | no | Full chain adjudication pass |
+| `check_step(market_id, step_index)` | no | Single-step adjudication |
+| `get_base_payouts(market_id)` | no | Final consensus payout list for the Base escrow relayer |
+| Base escrow `claim(market_id)` | Base Sepolia | Winner self-claims USDC directly from escrow |
+| `refund_cancelled(market_id)` | no | Return the cancellation allocation in the GenLayer position ledger |
 | `cancel_market` / `expire_market` | no | Lifecycle |
 | `pause` / `unpause` / `set_fees` / `set_minimums` / `set_owner` / `sweep_protocol_fees` | no | Owner admin |
 

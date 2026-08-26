@@ -22,7 +22,7 @@ const STEPS = [
   {
     icon: '⚖️',
     title: 'Stake real tokens on YES or NO',
-    body: 'Open any market and stake native GEN on whether the full chain will occur. Your stake is a real on-chain value transfer into the market pools. Odds shift with the pool ratio, and you can stake any time before the deadline.',
+    body: 'Open any market and stake USDC on Base Sepolia on whether the full chain will occur. Your wallet approves and deposits USDC into escrow, then GenLayer records the position. Odds shift with the pool ratio, and you can stake any time before the deadline.',
     accent: 'text-tertiary',
   },
   {
@@ -34,7 +34,7 @@ const STEPS = [
   {
     icon: '💰',
     title: 'Claim and withdraw winnings',
-    body: 'If your side wins, winners split the losing pool pro-rata. Head to Portfolio → Claim to credit your balance, then Withdraw to move tokens back to your wallet as a real native transfer. That’s the whole loop — welcome to the Causal Web.',
+    body: 'If your side wins, winners split the losing pool pro-rata. Once GenLayer finalizes, the relayer credits Base Sepolia escrow and you claim USDC directly to your wallet. That’s the whole loop — welcome to the Causal Web.',
     accent: 'text-tertiary',
   },
 ];

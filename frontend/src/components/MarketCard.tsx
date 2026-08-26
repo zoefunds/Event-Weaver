@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Market } from '../lib/types';
 import { StatusChip, CategoryChip } from './Chips';
-import { formatGen } from '../lib/wallet';
+import { formatUsdc } from '../lib/baseSepolia';
 
 /** Discovery-grid market card with probability, pool, and chain badge. */
 export function MarketCard({ market }: { market: Market }) {
@@ -70,7 +70,7 @@ export function MarketCard({ market }: { market: Market }) {
             className="text-2xl font-semibold text-on-surface"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            {formatGen(market.total_pool, 2)} <span className="text-sm text-outline">GEN</span>
+            {formatUsdc(market.total_pool, 2)} <span className="text-sm text-outline">USDC</span>
           </div>
         </div>
         <div className="flex items-end justify-end">

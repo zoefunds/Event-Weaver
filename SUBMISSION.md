@@ -5,9 +5,11 @@
 | | |
 | --- | --- |
 | Live app | https://eventweaver-orpin.vercel.app |
-| Backend API (health check) | https://eventweaver-api.fly.dev/health |
+| Backend API (health check) | https://eventweaver-api-prod.fly.dev/health |
 | Full source code | https://github.com/zoefunds/Event-Weaver |
-| Intelligent Contract address (GenLayer StudioNet) | `0x0361b5a160637407e7D93Ff8C1CC866855dD0cc2` |
+| Intelligent Contract address (GenLayer StudioNet) | `0x96727fd9E35036903B89829E1349dB5A83e7c48f` |
+| Base Sepolia USDC escrow | `0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C` |
+| Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
 ## What it does, in plain terms
 
@@ -19,8 +21,8 @@ either link breaks, or the deadline passes first, it pays out NO.
 
 Anyone can create one of these chains, anyone can stake real tokens on YES or NO, and when
 the deadline arrives the chain gets checked automatically — no one has to press a button.
-Winners split what the losing side staked, minus a small fee, and can withdraw it to their
-wallet.
+Winners split what the losing side staked, minus a small fee, and claim USDC directly from
+the Base Sepolia escrow to their wallet.
 
 ## The problem it solves
 
@@ -44,9 +46,9 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
   Wikipedia, CoinGecko, the Federal Reserve's site, Reuters), and the contract fetches that
   exact page live, at resolution time, from inside the validator sandbox
   (`gl.nondet.web.render`). Nothing is hardcoded or faked.
-- The tokens are real. Staking sends actual native GEN into the contract (a payable
-  transaction, not a database row). Claiming and withdrawing send actual GEN back out
-  (`emit_transfer`, a genuine on-chain transfer, not a credit you can only see in the UI).
+- The tokens are real. Staking deposits Base Sepolia test USDC into the deployed escrow,
+  then records the same amount on GenLayer. After resolution, the escrow sends a claimed
+  USDC allocation directly to the winner's wallet.
 - The five demo markets on the live site are not toy examples — they're built from
   real, checkable facts (the actual date of Ethereum's Merge, Apple's actual product
   history, SpaceX's actual launch history) and the outcomes you see were decided by the
@@ -66,12 +68,12 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
    whole flow — you can also reopen it any time from the footer's "Take the tour" link).
 2. Open **Discovery** to browse markets, or **Create** to build your own chain: write each
    condition in plain English, attach 1–5 public URLs as evidence, set a deadline.
-3. On any open market, stake GEN on YES or NO from the trading panel.
+3. On any open market, stake Base Sepolia USDC on YES or NO from the trading panel.
 4. When the deadline passes, the platform's backend automatically asks the contract to
    adjudicate — you don't have to do anything. (Before the deadline, only the market's
    creator can trigger an early check, so odds aren't disturbed by strangers.)
-5. If your side won, go to **Portfolio**, hit Claim, then Withdraw — that last step is a
-   real token transfer from the contract to your wallet.
+5. If your side won, go to **Portfolio** and hit Claim. The Base Sepolia escrow transfers
+   USDC directly to your wallet after the transaction confirms.
 
 ## Why this isn't a boilerplate prediction market
 
@@ -97,10 +99,10 @@ the actual product — not a themed skin on a yes/no template.
 
 - Contract passes `genvm-lint` cleanly and its schema loads on-chain (`genlayer schema`
   returns all 35 methods) — the two most common failure points for GenLayer contracts.
-- 24 automated unit tests (`pytest tests/direct/`) cover market creation validation, payable
+- Automated unit tests (`pytest tests/direct/`) cover market creation validation, USDC-denominated
   staking, fee/settlement math, every adjudication outcome (full pass, chain break,
   inconclusive evidence, malformed LLM output), permission rules, and admin controls.
-- Every write path listed above (create, stake, deposit, withdraw, claim, adjudicate) has
+- Every V1 write path listed above (create, Base USDC deposit, stake record, claim, adjudicate) has
   been executed against the live StudioNet contract with real transaction hashes, not just
   tested in isolation.
 - GitHub Actions CI runs the contract lint, the test suite, and both app builds on every

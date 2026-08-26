@@ -4,6 +4,7 @@ import { readContract, plain } from './genlayer.js';
 import { indexerState } from './indexer.js';
 import { resolverState } from './resolver.js';
 import { config } from './config.js';
+import { getBaseClaimable } from './baseSepolia.js';
 
 export const router = Router();
 
@@ -96,7 +97,7 @@ router.get('/api/markets/:id/resolution', asyncRoute(async (req, res) => {
  * succession (React effects, a double-click reconnect, a second tab) —
  * exactly the shape of request that would otherwise burn budget for no new
  * information. */
-const PORTFOLIO_CACHE_TTL_MS = 10 * 1000;
+const PORTFOLIO_CACHE_TTL_MS = 60 * 1000;
 const portfolioCache = new Map(); // address (lowercase) -> { at, data }
 
 router.get('/api/portfolio/:address', asyncRoute(async (req, res) => {
@@ -110,26 +111,34 @@ router.get('/api/portfolio/:address', asyncRoute(async (req, res) => {
     return res.json(cached.data);
   }
 
-  const [marketIdsRaw, balanceRaw] = await Promise.all([
-    readContract('get_user_market_ids', [address]),
-    readContract('get_balance_of', [address]),
-  ]);
-  const marketIds = plain(marketIdsRaw) ?? [];
-  const positions = [];
-  for (const id of marketIds) {
-    try {
-      const [pos, quote, market] = await Promise.all([
-        readContract('get_position', [id, address]).then(plain),
-        readContract('quote_payout', [id, address]).then(plain),
-        getMarket(Number(id)).then((m) => m ?? readContract('get_market', [id]).then(plain)),
-      ]);
-      positions.push({ market_id: Number(id), position: pos, quote, market });
-    } catch { /* skip unreadable position */ }
+  try {
+    const [marketIdsRaw, balanceRaw] = await Promise.all([
+      readContract('get_user_market_ids', [address]),
+      readContract('get_balance_of', [address]),
+    ]);
+    const marketIds = plain(marketIdsRaw) ?? [];
+    const positions = [];
+    for (const id of marketIds) {
+      try {
+        const [pos, quote, market, baseClaimable] = await Promise.all([
+          readContract('get_position', [id, address]).then(plain),
+          readContract('quote_payout', [id, address]).then(plain),
+          getMarket(Number(id)).then((m) => m ?? readContract('get_market', [id]).then(plain)),
+          getBaseClaimable(Number(id), address).catch(() => '0'),
+        ]);
+        positions.push({ market_id: Number(id), position: pos, quote: { ...quote, claimable: baseClaimable }, market });
+      } catch { /* skip unreadable position */ }
+    }
+    const notifications = await getActorActivity(address, 25);
+    const data = { address, balance: plain(balanceRaw), positions, notifications };
+    portfolioCache.set(key, { at: Date.now(), data });
+    res.json(data);
+  } catch (err) {
+    // A last known portfolio is safer and more useful than a blank page when
+    // StudioNet temporarily throttles reads.
+    if (cached) return res.json({ ...cached.data, stale: true });
+    throw err;
   }
-  const notifications = await getActorActivity(address, 25);
-  const data = { address, balance: plain(balanceRaw), positions, notifications };
-  portfolioCache.set(key, { at: Date.now(), data });
-  res.json(data);
 }));
 
 router.get('/api/stats', asyncRoute(async (_req, res) => {

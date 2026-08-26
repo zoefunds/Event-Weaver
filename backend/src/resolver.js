@@ -90,7 +90,7 @@ async function resolveDueMarkets(logger) {
 }
 
 export function startResolver(logger) {
-  const intervalMs = parseInt(process.env.RESOLVER_INTERVAL_MS ?? '60000', 10);
+  const intervalMs = parseInt(process.env.RESOLVER_INTERVAL_MS ?? '300000', 10);
   const loop = async () => {
     try {
       await resolveDueMarkets(logger);

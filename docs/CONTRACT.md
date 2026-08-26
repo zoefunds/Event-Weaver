@@ -24,18 +24,24 @@ Runner: `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` (docs
 `EXPECTED:` caller mistakes (bad input/state) · `EXTERNAL:` upstream web failures ·
 `TRANSIENT:` retryable · `LLM_ERROR:` unusable model output after sanitation.
 
+## V1 USDC settlement
+
+The GenLayer contract is the outcome and allocation ledger, not a native-token custodian in V1. It records USDC-denominated positions in six-decimal units and exposes `get_base_payouts(market_id)` after a terminal result. The backend relayer copies that immutable allocation list into the Base Sepolia escrow at `0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C`. Each recipient then claims USDC directly from the escrow. The escrow's `claimable` view is the authoritative post-claim balance.
+
 ## Fees & settlement
 
-Losing pool → 1% protocol fee (accrued, owner-sweepable) + 0.5% creator fee (credited) →
-remainder distributed pro-rata to winning stakers on `claim`. Creation bond returned on any
-clean terminal resolution. Cancelled markets refund everyone in full.
+Losing pool → 1% protocol fee + 0.5% creator fee → remainder distributed pro-rata to winning
+stakers through the Base escrow allocation list. Cancelled markets receive the contract-defined
+refund allocation. There is no V1 `withdraw` of native GEN.
 
 ## Verified on StudioNet (integration evidence)
 
 - Deploy + `genlayer schema` loads (35 methods).
 - `create_market` with 2–3 step chains (CLI and JS paths).
-- Payable `stake_yes` moved native value into the pool (activity log + pool balances).
-- `deposit` credited internal balance; `withdraw` accepted (native transfer at finality).
+- `stake_yes(market_id, amount)` records a confirmed Base Sepolia USDC stake in the
+  GenLayer consensus ledger (activity log + pool balances).
+- Final payouts come from `get_base_payouts`; the Base escrow relayer settles them and
+  winners self-claim USDC from Base Sepolia.
 - `request_resolution` fetched `apple.com/newsroom` live, LLM produced a correct
   low-confidence PENDING verdict (no price cut announced), consensus `MAJORITY_AGREE`
   in one round — no leader rotation, no Undetermined.

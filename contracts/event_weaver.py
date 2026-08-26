@@ -125,9 +125,9 @@ class Market:
     deadline_ts: u64            # after this, an unresolved chain expires to NO
     status: u8
     confidence_floor: u8        # per-market floor for step verdicts
-    yes_pool: u256              # native units staked on YES
-    no_pool: u256               # native units staked on NO
-    creation_bond: u256         # bond posted by creator, returned on clean resolution
+    yes_pool: u256              # USDC base units (6 decimals) staked on YES
+    no_pool: u256               # USDC base units (6 decimals) staked on NO
+    creation_bond: u256         # deprecated native-GEN field, retained as zero for V1
     resolved_ts: u64
     resolution_summary: str     # overall transparent reasoning of the final verdict
     fee_paid: bool              # protocol+creator fee already carved from losing pool
@@ -321,44 +321,19 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
 
 
 # ============================================================================
-#  Native transfer target — payouts go to MetaMask wallets (EOAs), not other
-#  Intelligent Contracts. gl.get_contract_at(...).emit_transfer(...) is the
-#  IC-to-IC path and does not settle real balance for an externally-owned
-#  account. The EOA/EVM path requires this contract-interface stub instead.
-# ============================================================================
-
-@gl.evm.contract_interface
-class _Recipient:
-    class View:
-        pass
-
-    class Write:
-        pass
-
-
-def _send_gen(to_address: Address, amount: int) -> None:
-    """Single emission choke point for every native-token payout. Zero the
-    ledger field and persist state BEFORE calling this — never after —
-    so a reentrant call always finds the balance already zeroed."""
-    if amount <= 0:
-        return
-    _Recipient(to_address).emit_transfer(value=u256(int(amount)))
-
-
-# ============================================================================
 #  The Contract
 # ============================================================================
 
 class EventWeaver(gl.Contract):
-    """Causal-chain prediction markets with trustless web-evidence resolution
-    and a real native-token value-transfer path."""
+    """Causal-chain prediction markets. GenLayer adjudicates outcomes while
+    Base Sepolia USDC escrow handles all value movement and payouts."""
 
     # ---- ownership / config -------------------------------------------------
     owner: Address
     paused: bool
     protocol_fee_bps: u32
     creator_fee_bps: u32
-    accrued_protocol_fees: u256
+    accrued_protocol_fees: u256  # informational USDC units; escrow holds funds
     min_creation_bond: u256
     min_stake: u256
 
@@ -374,9 +349,9 @@ class EventWeaver(gl.Contract):
     # per-market activity log
     activity: TreeMap[u32, DynArray[ActivityEvent]]
 
-    # internal withdrawable native balances (credited by deposits, claims,
-    # refunds, creator fees); withdraw() turns credits into real transfers.
-    balances: TreeMap[Address, u256]
+    # Addresses that staked each market. Needed by the Base Sepolia relayer to
+    # read a finalized, consensus-derived payout list without off-chain DB trust.
+    market_stakers: TreeMap[u32, DynArray[Address]]
 
     # ---- platform metrics ---------------------------------------------------
     total_volume: u256
@@ -396,9 +371,9 @@ class EventWeaver(gl.Contract):
         """Deploy the platform.
 
         Args:
-            min_creation_bond: native units a creator must attach to
-                create_market (anti-spam). 0 disables the bond requirement.
-            min_stake: minimum native units per stake action. 0 disables.
+            min_creation_bond: retained compatibility setting (no native value
+                is accepted in V1; anti-spam is handled off-chain).
+            min_stake: minimum USDC base units per stake action. 0 disables.
         """
         self.owner = gl.message.sender_address
         self.paused = False
@@ -467,15 +442,6 @@ class EventWeaver(gl.Contract):
             pos = self.positions[key]
         return pos
 
-    def _credit_balance(self, addr: Address, amount: int) -> None:
-        """Credit an internal withdrawable balance (value stays in-contract
-        until withdraw() emits the real native transfer)."""
-        if amount <= 0:
-            return
-        current = self.balances.get(addr)
-        base = int(current) if current is not None else 0
-        self.balances[addr] = u256(base + int(amount))
-
     def _log(self, market_id: int, kind: str, actor: Address, amount: int, ts: int, note: str) -> None:
         """Append to the market's activity log."""
         mid = u32(market_id)
@@ -504,12 +470,15 @@ class EventWeaver(gl.Contract):
                 return
         arr.append(mid)
 
-    def _send_native(self, recipient: Address, amount: int) -> None:
-        """Emit an actual native-token transfer from this contract to
-        `recipient` (a wallet/EOA). Outbound half of the value-transfer path.
-        Delegates to the module-level `_send_gen` choke point — callers must
-        zero and persist the ledger field(s) BEFORE invoking this."""
-        _send_gen(recipient, amount)
+    def _record_market_staker(self, addr: Address, market_id: int) -> None:
+        mid = u32(market_id)
+        if self.market_stakers.get(mid) is None:
+            self.market_stakers[mid] = []
+        arr = self.market_stakers[mid]
+        for existing in arr:
+            if existing == addr:
+                return
+        arr.append(addr)
 
     # ------------------------------------------------------------------------
     #  Market serialization for views (schema-safe primitives only)
@@ -757,9 +726,8 @@ Rules:
         self._settle_fees(market)
 
     def _settle_fees(self, market: Market) -> None:
-        """Carve protocol + creator fees out of the losing pool once, and
-        return the creator's bond. Credits flow through internal balances
-        and become real native transfers on withdraw()."""
+        """Calculate the losing-pool fee accounting once. USDC remains in
+        Base Sepolia escrow; only the distributable amount is relayed."""
         if market.fee_paid:
             return
         status = int(market.status)
@@ -771,11 +739,7 @@ Rules:
             return
 
         protocol_fee = (losing_pool * int(self.protocol_fee_bps)) // BPS_DENOMINATOR
-        creator_fee = (losing_pool * int(self.creator_fee_bps)) // BPS_DENOMINATOR
         self.accrued_protocol_fees = u256(int(self.accrued_protocol_fees) + protocol_fee)
-        self._credit_balance(market.creator, creator_fee)
-        # bond returned on any clean terminal resolution
-        self._credit_balance(market.creator, int(market.creation_bond))
         market.fee_paid = True
 
     def _losing_pool_after_fees(self, market: Market) -> tuple[int, int]:
@@ -793,7 +757,7 @@ Rules:
     #  PUBLIC WRITES — market lifecycle
     # ========================================================================
 
-    @gl.public.write.payable
+    @gl.public.write
     def create_market(
         self,
         title: str,
@@ -803,8 +767,8 @@ Rules:
         deadline_ts: int,
         confidence_floor: int = DEFAULT_CONFIDENCE_FLOOR,
     ) -> int:
-        """Create a causal-chain market. Attach at least `min_creation_bond`
-        native units as an anti-spam bond (returned on resolution).
+        """Create a causal-chain market. V1 accepts no native value: USDC is
+        deposited into the Base Sepolia escrow only when a user stakes.
 
         Args:
             title / description / category: market metadata.
@@ -818,10 +782,9 @@ Rules:
         """
         self._not_paused()
         sender = gl.message.sender_address
-        bond = int(gl.message.value)
+        bond = 0
         now_ts = self._now_ts()
 
-        _require(bond >= int(self.min_creation_bond), "creation bond below minimum")
         _require(0 < len(title.strip()) <= MAX_TITLE_LEN, f"title must be 1..{MAX_TITLE_LEN} chars")
         _require(len(description) <= MAX_DESCRIPTION_LEN, f"description exceeds {MAX_DESCRIPTION_LEN} chars")
         _require(0 < len(category.strip()) <= MAX_CATEGORY_LEN, "category required")
@@ -906,7 +869,8 @@ Rules:
         return market_id
 
     def _stake(self, market_id: int, side: int, amount: int) -> None:
-        """Shared staking core for payable and balance-funded stakes."""
+        """Shared USDC-stake accounting core. Escrow custody happens first on
+        Base Sepolia; this consensus ledger records the matching position."""
         self._not_paused()
         now_ts = self._now_ts()
         market = self._get_market(market_id)
@@ -934,76 +898,26 @@ Rules:
         self.total_volume = u256(int(self.total_volume) + amount)
         self.total_stakes = u64(int(self.total_stakes) + 1)
         self._record_user_market(sender, market_id)
+        self._record_market_staker(sender, market_id)
         self._log(market_id, kind, sender, amount, now_ts, "")
 
-    @gl.public.write.payable
-    def stake_yes(self, market_id: int) -> None:
-        """Stake attached native value on the full chain occurring.
-        This IS a real value transfer: the chain moves gl.message.value from
-        the caller into the contract before this body runs."""
-        self._stake(market_id, SIDE_YES, int(gl.message.value))
-
-    @gl.public.write.payable
-    def stake_no(self, market_id: int) -> None:
-        """Stake attached native value on the chain NOT fully occurring."""
-        self._stake(market_id, SIDE_NO, int(gl.message.value))
+    @gl.public.write
+    def stake_yes(self, market_id: int, amount: int) -> None:
+        """Record a USDC stake on YES after the wallet has deposited the same
+        six-decimal amount into EventWeaverEscrow on Base Sepolia."""
+        self._stake(market_id, SIDE_YES, int(amount))
 
     @gl.public.write
-    def stake_from_balance(self, market_id: int, side: str, amount: int) -> None:
-        """Stake using previously deposited / won internal balance instead of
-        attaching new value."""
-        sender = gl.message.sender_address
-        side_normalized = side.strip().upper()
-        _require(side_normalized in ("YES", "NO"), "side must be 'YES' or 'NO'")
-        try:
-            amount = int(amount)
-        except (ValueError, TypeError):
-            raise gl.vm.UserError(ERR_EXPECTED + "amount must be an integer")
-        current = self.balances.get(sender)
-        available = int(current) if current is not None else 0
-        _require(amount > 0 and amount <= available, "insufficient internal balance")
-        self.balances[sender] = u256(available - amount)
-        self._stake(
-            market_id,
-            SIDE_YES if side_normalized == "YES" else SIDE_NO,
-            amount,
-        )
-
-    # ========================================================================
-    #  PUBLIC WRITES — value transfer path (deposit / withdraw / claim)
-    # ========================================================================
-
-    @gl.public.write.payable
-    def deposit(self) -> None:
-        """Deposit native tokens into an internal withdrawable balance.
-        Inbound half of the value-transfer path."""
-        amount = int(gl.message.value)
-        _require(amount > 0, "attach a positive value to deposit")
-        self._credit_balance(gl.message.sender_address, amount)
-
-    @gl.public.write
-    def withdraw(self, amount: int) -> None:
-        """Withdraw internal balance as a REAL native-token transfer from the
-        contract to the caller, emitted on finalization. Outbound half of the
-        value-transfer path."""
-        sender = gl.message.sender_address
-        try:
-            amount = int(amount)  # tolerate stringly-typed calldata amounts
-        except (ValueError, TypeError):
-            raise gl.vm.UserError(ERR_EXPECTED + "amount must be an integer")
-        current = self.balances.get(sender)
-        available = int(current) if current is not None else 0
-        _require(amount > 0, "withdraw amount must be positive")
-        _require(amount <= available, f"insufficient balance: have {available}")
-        self.balances[sender] = u256(available - amount)
-        self.total_payouts = u256(int(self.total_payouts) + amount)
-        self._send_native(sender, amount)
+    def stake_no(self, market_id: int, amount: int) -> None:
+        """Record a USDC stake on NO after its Base Sepolia escrow deposit."""
+        self._stake(market_id, SIDE_NO, int(amount))
 
     @gl.public.write
     def claim(self, market_id: int) -> int:
         """After terminal resolution, claim winnings: the caller's winning
         stake back plus a pro-rata share of the losing pool (after fees).
-        Credits the internal balance; call withdraw() to move tokens out.
+        This is a ledger acknowledgement only; real USDC is claimed directly
+        from EventWeaverEscrow on Base Sepolia after the relayer settles it.
 
         Returns the credited amount.
         """
@@ -1029,13 +943,12 @@ Rules:
         share = (distributable * my_winning_stake) // winning_pool if winning_pool > 0 else 0
         payout = my_winning_stake + share
         pos.claimed = True
-        self._credit_balance(sender, payout)
         self._log(market_id, "CLAIM", sender, payout, now_ts, "")
         return payout
 
     @gl.public.write
     def refund_cancelled(self, market_id: int) -> int:
-        """Reclaim full stakes from a cancelled market. Returns amount credited."""
+        """Acknowledge a cancelled-market refund. USDC is claimed from escrow."""
         now_ts = self._now_ts()
         market = self._get_market(market_id)
         _require(int(market.status) == STATUS_CANCELLED, "market is not cancelled")
@@ -1047,7 +960,6 @@ Rules:
         refund = int(pos.yes_amount) + int(pos.no_amount)
         _require(refund > 0, "nothing to refund")
         pos.claimed = True
-        self._credit_balance(sender, refund)
         self._log(market_id, "CLAIM", sender, refund, now_ts, "refund")
         return refund
 
@@ -1068,7 +980,6 @@ Rules:
         market.status = u8(STATUS_CANCELLED)
         market.resolved_ts = u64(max(0, now_ts))
         market.resolution_summary = "Cancelled; all stakes refundable via refund_cancelled()."
-        self._credit_balance(market.creator, int(market.creation_bond))
         market.fee_paid = True  # no fees on cancellation
         self._log(market_id, "CANCEL", sender, 0, now_ts, "")
 
@@ -1250,13 +1161,12 @@ Rules:
 
     @gl.public.write
     def sweep_protocol_fees(self) -> int:
-        """Owner: move accrued protocol fees into the owner's withdrawable
-        balance. Returns the swept amount."""
+        """Owner: clear the informational USDC fee counter. Actual USDC fees
+        remain in the Base Sepolia escrow and are handled there."""
         self._only_owner()
         amount = int(self.accrued_protocol_fees)
         _require(amount > 0, "no fees accrued")
         self.accrued_protocol_fees = u256(0)
-        self._credit_balance(self.owner, amount)
         return amount
 
     # ========================================================================
@@ -1346,9 +1256,8 @@ Rules:
 
     @gl.public.view
     def get_balance_of(self, address: str) -> int:
-        """Internal withdrawable native balance of an address."""
-        current = self.balances.get(Address(address))
-        return int(current) if current is not None else 0
+        """Deprecated in V1: balances are held by Base Sepolia escrow."""
+        return 0
 
     @gl.public.view
     def get_pool(self, market_id: int) -> dict:
@@ -1400,6 +1309,35 @@ Rules:
             "hypothetical_no_win": hypothetical_no,
             "claimed": bool(pos.claimed),
         }
+
+    @gl.public.view
+    def get_base_payouts(self, market_id: int) -> list[dict]:
+        """Consensus-derived USDC allocations for the Base Sepolia relayer.
+        This is deliberately unavailable until terminal resolution so the
+        relayer cannot pay a market before GenLayer decides its outcome."""
+        market = self._get_market(market_id)
+        status = int(market.status)
+        _require(
+            status in (STATUS_RESOLVED_YES, STATUS_RESOLVED_NO, STATUS_EXPIRED, STATUS_CANCELLED),
+            "market is not settled",
+        )
+        stakers = self.market_stakers.get(u32(market_id))
+        if stakers is None:
+            return []
+        winning_pool, distributable = self._losing_pool_after_fees(market)
+        rows: list[dict] = []
+        for addr in stakers:
+            pos = self.positions.get(self._position_key(market_id, addr))
+            if pos is None:
+                continue
+            if status == STATUS_CANCELLED:
+                payout = int(pos.yes_amount) + int(pos.no_amount)
+            else:
+                winning_stake = int(pos.yes_amount) if status == STATUS_RESOLVED_YES else int(pos.no_amount)
+                payout = winning_stake + ((distributable * winning_stake) // winning_pool if winning_pool > 0 else 0)
+            if payout > 0:
+                rows.append({"address": addr.as_hex, "amount": payout})
+        return rows
 
     @gl.public.view
     def get_resolution_report(self, market_id: int) -> dict:
