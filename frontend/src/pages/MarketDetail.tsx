@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import type { Market, ChainStep, ActivityEvent, Position } from '../lib/types';
 import { StatusChip, StepChip, CategoryChip } from '../components/Chips';
 import { CONTRACT_ADDRESS, useWallet, contractWrite } from '../lib/wallet';
@@ -22,7 +22,14 @@ async function waitForStakeApplied(txHash: string, timeoutMs = 120_000) {
     try {
       const status = await api.stakeStatus(txHash);
       if (status.status === 'applied') return;
-    } catch { /* not scanned yet (still awaiting confirmations) — keep polling */ }
+    } catch (e) {
+      // A 404 means the deposit hasn't cleared confirmations yet — keep
+      // polling. Anything else (500, network failure) is a real backend
+      // problem and should surface immediately rather than being silently
+      // retried for the full timeout — the deposit itself already
+      // succeeded, so this is only about visibility, not safety.
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+    }
     await sleep(4000);
   }
   throw new Error(

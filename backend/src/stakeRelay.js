@@ -41,6 +41,18 @@ const ESCROW_ABI = [
 const LAST_BLOCK_KEY = 'stakeRelay:lastScannedBlock';
 const MAX_BLOCK_RANGE = 2000; // stay well under typical RPC log-range caps
 
+/** Exposed via GET /health so a stuck relay (bad RPC, drained relayer
+ * wallet, wrong contract address) is visible the same way indexer/resolver
+ * lag already is, instead of only showing up as a stake stuck 'pending'. */
+export const stakeRelayState = {
+  configured: false,
+  lastTickAt: null,
+  lastScanError: null,
+  lastApplyError: null,
+  deposited: 0,
+  applied: 0,
+};
+
 function provider() {
   return new JsonRpcProvider(config.baseSepolia.rpcUrl);
 }
@@ -85,6 +97,7 @@ export async function scanForDeposits(logger) {
       blockNumber: ev.blockNumber,
     }));
     await insertPendingStakes(rows);
+    stakeRelayState.deposited += rows.length;
     logger.info({ count: rows.length, fromBlock, toBlock }, 'confirmed USDC deposits detected');
   }
   await setSyncState(LAST_BLOCK_KEY, String(toBlock));
@@ -119,15 +132,19 @@ export async function applyPendingStakes(logger) {
         retries: 60,
       });
       await markStakeApplied(row.base_tx_hash, hash);
+      stakeRelayState.applied += 1;
+      stakeRelayState.lastApplyError = null;
       logger.info({ baseTxHash: row.base_tx_hash, marketId: row.market_id }, 'stake applied to GenLayer');
     } catch (err) {
       await markStakeFailed(row.base_tx_hash, err.message);
+      stakeRelayState.lastApplyError = err.message;
       logger.error({ err: err.message, baseTxHash: row.base_tx_hash }, 'stake apply failed; will retry');
     }
   }
 }
 
 export function startStakeRelay(logger) {
+  stakeRelayState.configured = isStakeRelayConfigured();
   if (!isStakeRelayConfigured()) {
     logger.warn('Stake relayer disabled: BASE_SEPOLIA_RELAYER_PRIVATE_KEY is not set');
     return;
@@ -138,10 +155,17 @@ export function startStakeRelay(logger) {
     running = true;
     try {
       await scanForDeposits(logger);
+      stakeRelayState.lastScanError = null;
+    } catch (err) {
+      stakeRelayState.lastScanError = err.message;
+      logger.error({ err }, 'stake relay scan failed');
+    }
+    try {
       await applyPendingStakes(logger);
     } catch (err) {
-      logger.error({ err }, 'stake relay tick failed');
+      logger.error({ err }, 'stake relay apply pass failed');
     } finally {
+      stakeRelayState.lastTickAt = new Date().toISOString();
       running = false;
     }
   };

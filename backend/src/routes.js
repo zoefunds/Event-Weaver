@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { listMarkets, getMarket, getActivity, getActorActivity, getStats, dbHealthy, hasDb } from './db.js';
+import { listMarkets, getMarket, getActivity, getActorActivity, getStats, dbHealthy, hasDb, getStakeByTxHash, listStakesForAddress } from './db.js';
 import { readContract, plain } from './genlayer.js';
 import { indexerState } from './indexer.js';
 import { resolverState } from './resolver.js';
 import { config } from './config.js';
 import { getBaseClaimable } from './baseSepolia.js';
+import { stakeRelayState } from './stakeRelay.js';
 
 export const router = Router();
 
@@ -26,6 +27,14 @@ router.get('/health', asyncRoute(async (_req, res) => {
       attempts: resolverState.attempts,
       resolved: resolverState.resolved,
       lastError: resolverState.lastError,
+    },
+    stakeRelay: {
+      configured: stakeRelayState.configured,
+      lastTickAt: stakeRelayState.lastTickAt,
+      deposited: stakeRelayState.deposited,
+      applied: stakeRelayState.applied,
+      lastScanError: stakeRelayState.lastScanError,
+      lastApplyError: stakeRelayState.lastApplyError,
     },
     contract: config.contractAddress,
     uptimeSec: Math.floor(process.uptime()),
