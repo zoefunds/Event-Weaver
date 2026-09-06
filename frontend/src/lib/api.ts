@@ -29,4 +29,8 @@ export const api = {
     get<{ contractAddress: string; categories: string[]; chainConfig: Record<string, unknown> }>(
       '/api/config'
     ),
+  /** Status of one confirmed USDC deposit as the backend relayer turns it
+   * into a GenLayer position. 404 means it hasn't cleared confirmations yet. */
+  stakeStatus: (txHash: string) =>
+    get<{ status: string; attempts?: number; lastError?: string | null }>(`/api/stakes/${txHash}`),
 };

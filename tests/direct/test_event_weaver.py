@@ -88,6 +88,36 @@ def mock_sources(vm, body="Official announcement: the event occurred."):
     vm.mock_web(r".*fb\.com.*", {"status": 200, "body": body})
 
 
+SIDE_YES = 1
+SIDE_NO = 2
+
+_tx_counter = [0]
+
+
+def next_tx_hash() -> str:
+    """A fresh, unique fake Base Sepolia tx hash for each relayed stake."""
+    _tx_counter[0] += 1
+    return "0x" + format(_tx_counter[0], "064x")
+
+
+def relayer_stake(vm, c, market_id, staker, side, amount, tx_hash=None, sender=OWNER):
+    """Call record_stake as the relayer (OWNER by default — the contract's
+    initial relayer is whoever deployed it). Mirrors the real flow: only the
+    relayer ever records a position, and only after it has observed a
+    confirmed Base Sepolia deposit — modeled here by the caller-supplied
+    (market_id, staker, side, amount) standing in for that confirmed event."""
+    if tx_hash is None:
+        tx_hash = next_tx_hash()
+    prior_sender, prior_value = vm.sender, vm.value
+    vm.sender = sender
+    vm.value = 0
+    try:
+        return c.record_stake(market_id, hx(staker), side, amount, tx_hash)
+    finally:
+        vm.sender = prior_sender
+        vm.value = prior_value
+
+
 # ---------------------------------------------------------------------------
 # Deployment & config
 # ---------------------------------------------------------------------------
@@ -98,6 +128,7 @@ def test_deploy_and_config():
         c = fresh(vm)
         cfg = c.get_config()
         assert same(cfg["owner"], hx(OWNER))
+        assert same(cfg["relayer"], hx(OWNER))  # relayer defaults to the deployer
         assert cfg["paused"] is False
         assert cfg["protocol_fee_bps"] == 100
         assert cfg["creator_fee_bps"] == 50
@@ -173,7 +204,11 @@ def test_confidence_floor_is_clamped():
 
 
 # ---------------------------------------------------------------------------
-# Staking (payable value path in)
+# Staking — every position is created via record_stake(), the relayer-only
+# entry point that stands in for "the relayer confirmed a Base Sepolia USDC
+# deposit". There is no path left for a caller to fund their own position
+# directly, which is what makes a recorded stake trustworthy regardless of
+# how the matching payment was made.
 # ---------------------------------------------------------------------------
 
 def test_stake_moves_value_into_pools():
@@ -181,13 +216,8 @@ def test_stake_moves_value_into_pools():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = 2 * GEN
-        c.stake_yes(0)
-        vm.sender = CAROL
-        vm.value = 1 * GEN
-        c.stake_no(0)
-        vm.value = 0
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 1 * GEN)
 
         pool = c.get_pool(0)
         assert pool["yes_pool"] == 2 * GEN
@@ -205,10 +235,8 @@ def test_stake_zero_value_reverts():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = 0
         with vm.expect_revert():
-            c.stake_yes(0)
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, 0)
 
 
 def test_stake_after_deadline_reverts():
@@ -217,45 +245,73 @@ def test_stake_after_deadline_reverts():
         c = fresh(vm)
         make_market(vm, c)
         vm.warp(iso(DEADLINE + 1))  # advance the consensus clock past the deadline
-        vm.sender = BOB
-        vm.value = GEN
         with vm.expect_revert():
-            c.stake_yes(0)
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
 
 
-def test_stake_from_balance():
+def test_only_relayer_may_record_a_stake():
+    """The whole point of the redesign: nobody but the relayer can create a
+    position, including the staker themselves — so a position can never
+    exist without the relayer having first verified a real payment."""
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = 3 * GEN
-        c.deposit()
-        vm.value = 0
-        c.stake_from_balance(0, "YES", 2 * GEN)
-        assert c.get_balance_of(hx(BOB)) == 1 * GEN
-        assert c.get_pool(0)["yes_pool"] == 2 * GEN
-        with vm.expect_revert():  # more than remaining balance
-            c.stake_from_balance(0, "NO", 2 * GEN)
+        with vm.expect_revert():
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, sender=BOB)  # staker calling for themself
+        with vm.expect_revert():
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, sender=ALICE)  # unrelated third party
+        assert c.get_pool(0)["yes_pool"] == 0
 
 
-# ---------------------------------------------------------------------------
-# Deposit / withdraw (value path out)
-# ---------------------------------------------------------------------------
-
-def test_deposit_and_withdraw_ledger():
+def test_record_stake_is_idempotent_on_base_tx_hash():
+    """A relayer that crashes after broadcasting record_stake but before
+    seeing the receipt must be able to safely retry with the same
+    base_tx_hash — this is the recovery path for 'payment succeeded, the
+    next step (recording the stake) failed partway through'. Replaying the
+    same on-chain deposit must never double-credit the position."""
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
-        vm.sender = BOB
-        vm.value = 5 * GEN
-        c.deposit()
-        vm.value = 0
-        assert c.get_balance_of(hx(BOB)) == 5 * GEN
-        c.withdraw(2 * GEN)
-        assert c.get_balance_of(hx(BOB)) == 3 * GEN
+        make_market(vm, c)
+        tx_hash = "0x" + "ab" * 32
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN, tx_hash=tx_hash)
+        assert c.is_stake_applied(tx_hash) is True
+        # Retry of the exact same deposit (relayer restart, duplicate scan, …)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN, tx_hash=tx_hash)
+        pos = c.get_position(0, hx(BOB))
+        assert pos["yes_amount"] == 2 * GEN  # unchanged — not doubled
+        assert c.get_pool(0)["yes_pool"] == 2 * GEN
+        assert c.get_platform_stats()["total_stakes"] == 1
+
+
+def test_record_stake_requires_base_tx_hash():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
         with vm.expect_revert():
-            c.withdraw(10 * GEN)
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, tx_hash="")
+
+
+def test_set_relayer_rotates_the_trusted_relay_identity():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.sender = ALICE
+        with vm.expect_revert():  # only the owner may rotate the relayer
+            c.set_relayer(hx(CAROL))
+        vm.sender = OWNER
+        c.set_relayer(hx(CAROL))
+        assert same(c.get_config()["relayer"], hx(CAROL))
+
+        # the old relayer (OWNER) is no longer trusted
+        with vm.expect_revert():
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, sender=OWNER)
+        # the new relayer (CAROL) is
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, sender=CAROL)
+        assert c.get_pool(0)["yes_pool"] == GEN
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +335,8 @@ def test_full_chain_resolves_yes_and_pays_out():
         make_market(vm, c)  # creator ALICE
 
         # stakes: BOB 2 GEN YES, CAROL 1 GEN NO
-        vm.sender = BOB
-        vm.value = 2 * GEN
-        c.stake_yes(0)
-        vm.sender = CAROL
-        vm.value = 1 * GEN
-        c.stake_no(0)
-        vm.value = 0
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 1 * GEN)
 
         # both steps verify with high confidence
         mock_sources(vm)
@@ -305,8 +356,7 @@ def test_full_chain_resolves_yes_and_pays_out():
         vm.sender = BOB
         payout = c.claim(0)
         expected = 2 * GEN + (GEN - (GEN * 150) // 10000)
-        assert payout == expected
-        assert c.get_balance_of(hx(BOB)) == expected
+        assert payout == expected  # ledger acknowledgement only; real USDC is claimed from Base Sepolia escrow
 
         # loser cannot claim; winner cannot double-claim
         vm.sender = CAROL
@@ -315,10 +365,6 @@ def test_full_chain_resolves_yes_and_pays_out():
         vm.sender = BOB
         with vm.expect_revert():
             c.claim(0)
-
-        # withdraw the winnings (native transfer out)
-        c.withdraw(expected)
-        assert c.get_balance_of(hx(BOB)) == 0
 
 
 def test_failed_step_breaks_chain_to_no():
@@ -371,10 +417,7 @@ def test_post_deadline_adjudication_is_permissionless_and_expires():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = GEN
-        c.stake_yes(0)
-        vm.value = 0
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
 
         mock_sources(vm, body="Nothing happened.")
         vm.mock_llm(r".*", verdict(False, False, 90))
@@ -412,18 +455,14 @@ def test_creator_cancel_and_refund():
         assert c.get_market(0)["status"] == "CANCELLED"
 
         mid = make_market(vm, c)
-        vm.sender = BOB
-        vm.value = GEN
-        c.stake_yes(mid)
-        vm.value = 0
+        relayer_stake(vm, c, mid, BOB, SIDE_YES, GEN)
         vm.sender = ALICE
         with vm.expect_revert():  # creator can't cancel once staked
             c.cancel_market(mid)
         vm.sender = OWNER         # owner can
         c.cancel_market(mid)
         vm.sender = BOB
-        assert c.refund_cancelled(mid) == GEN
-        assert c.get_balance_of(hx(BOB)) == GEN
+        assert c.refund_cancelled(mid) == GEN  # ledger acknowledgement; USDC refund happens via escrow
 
 
 # ---------------------------------------------------------------------------
@@ -455,13 +494,8 @@ def test_protocol_fees_accrue_and_sweep():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = 2 * GEN
-        c.stake_yes(0)
-        vm.sender = CAROL
-        vm.value = 10 * GEN
-        c.stake_no(0)
-        vm.value = 0
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 10 * GEN)
 
         mock_sources(vm)
         vm.mock_llm(r".*", verdict(True, False, 90))
@@ -469,15 +503,16 @@ def test_protocol_fees_accrue_and_sweep():
         vm.sender = ALICE
         c.request_resolution(0)  # YES wins; losing pool = 10 GEN
 
+        # protocol fee accrues informationally; actual USDC fees stay in the
+        # Base Sepolia escrow (V1 no longer credits an on-chain creator fee
+        # balance here — that accounting moved to the escrow relay)
         stats = c.get_platform_stats()
         assert stats["accrued_protocol_fees"] == (10 * GEN * 100) // 10000  # 1%
-        # creator fee credited to ALICE (0.5%)
-        assert c.get_balance_of(hx(ALICE)) == (10 * GEN * 50) // 10000
 
         vm.sender = OWNER
         swept = c.sweep_protocol_fees()
         assert swept == (10 * GEN * 100) // 10000
-        assert c.get_balance_of(hx(OWNER)) == swept
+        assert c.get_platform_stats()["accrued_protocol_fees"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -503,7 +538,7 @@ def test_time_argument_no_longer_accepted_by_any_write():
     with vm.activate():
         c = fresh(vm)
         mid = make_market(vm, c)
-        vm.sender = BOB
+        vm.sender = OWNER  # the relayer — arg-smuggling must fail before permission is even relevant
         vm.value = GEN
 
         fabricated_future = DEADLINE + 10_000_000
@@ -511,7 +546,7 @@ def test_time_argument_no_longer_accepted_by_any_write():
 
         for bad_ts in (fabricated_future, fabricated_past):
             with vm.expect_revert():
-                c.stake_yes(mid, bad_ts)
+                c.record_stake(mid, hx(BOB), SIDE_YES, GEN, next_tx_hash(), bad_ts)
             with vm.expect_revert():
                 c.claim(mid, bad_ts)
             with vm.expect_revert():
@@ -559,10 +594,8 @@ def test_fabricated_future_timestamp_cannot_bypass_staking_deadline():
         make_market(vm, c)
 
         vm.warp(iso(DEADLINE + 1))
-        vm.sender = BOB
-        vm.value = GEN
         with vm.expect_revert():
-            c.stake_yes(0)
+            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
         assert c.get_pool(0)["yes_pool"] == 0
 
 
@@ -590,13 +623,8 @@ def test_payout_amount_is_independent_of_any_caller_timing_claim():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.sender = BOB
-        vm.value = 2 * GEN
-        c.stake_yes(0)
-        vm.sender = CAROL
-        vm.value = 1 * GEN
-        c.stake_no(0)
-        vm.value = 0
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 1 * GEN)
 
         mock_sources(vm)
         vm.mock_llm(r".*", verdict(True, False, 90))

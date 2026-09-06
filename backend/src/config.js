@@ -4,7 +4,7 @@ import 'dotenv/config';
 export const config = {
   port: parseInt(process.env.PORT ?? '8080', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x96727fd9E35036903B89829E1349dB5A83e7c48f',
+  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x0551246DcB7de220474b5a479820AA18F1DDAB5C',
   // StudioNet's shared RPC is capped at 500 reads/hour. Five minutes keeps
   // indexing, resolution, and settlement well below that budget.
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS ?? '300000', 10),
@@ -14,8 +14,18 @@ export const config = {
   baseSepolia: {
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
     usdcAddress: process.env.BASE_SEPOLIA_USDC ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C',
+    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0x83D73b3217314aF32D833e18d90356299835d0a5',
+    // Same key signs both halves of the stake relay: it is the escrow's
+    // trusted `relayer` (settle()) and, via createAccount(), the GenLayer
+    // contract's trusted `relayer` (record_stake()) — one operational
+    // identity that only ever acts on deposits/outcomes it has independently
+    // confirmed on-chain.
     relayerPrivateKey: process.env.BASE_SEPOLIA_RELAYER_PRIVATE_KEY ?? '',
+    // Blocks to wait behind the chain head before treating a `Staked`
+    // deposit as final. Base Sepolia reorgs beyond a handful of blocks are
+    // not realistic, but this keeps the relayer from recording a stake for
+    // a deposit that later gets reorged out.
+    stakeConfirmations: parseInt(process.env.BASE_SEPOLIA_STAKE_CONFIRMATIONS ?? '5', 10),
   },
 };
 

@@ -19,7 +19,7 @@
 1. [What is EventWeaver](#what-is-eventweaver)
 2. [Why this needs GenLayer](#why-this-needs-genlayer)
 3. [Screenshots](#screenshots)
-4. [V1 documentation](v1.md)
+4. [V1 documentation](v1.md) · [Confirmed-payment & recovery fix](review-v1.md)
 5. [How a market works (lifecycle)](#how-a-market-works)
 6. [The value-transfer path](#the-value-transfer-path)
 7. [Architecture](#architecture)
@@ -59,22 +59,40 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C`](https://sepolia.basescan.org/address/0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C)
+[`0x83D73b3217314aF32D833e18d90356299835d0a5`](https://sepolia.basescan.org/address/0x83D73b3217314aF32D833e18d90356299835d0a5)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
-1. A staker approves USDC and calls the Base escrow's `stake(marketId, amount)`.
-2. The same wallet records `stake_yes(marketId, amount)` or `stake_no(...)` on GenLayer.
+A stake is only ever recorded off the back of a confirmed on-chain payment — never a
+client-supplied claim — and a deposit that never gets turned into a position (a crash between
+steps 2 and 3 below) is recovered automatically rather than stranded:
+
+1. A staker approves USDC and calls the Base escrow's `stake(marketId, side, amount)` directly
+   (`side`: 1 = YES, 2 = NO, carried in the deposit itself). This is the *only* step the user
+   performs, and it's a real, immediately-confirmable USDC transfer — including for anyone
+   who calls it directly against the contract rather than through the website.
+2. The backend's stake relay (`backend/src/stakeRelay.js`) watches the escrow for confirmed
+   `Staked` events, durably records each one in Postgres (`pending_stakes`) the moment it
+   clears confirmations, and is the *only* caller GenLayer trusts to turn a deposit into a
+   position, via `record_stake(marketId, staker, side, amount, base_tx_hash)` — there is no
+   longer any way for a caller to fund their own position. `base_tx_hash` makes this
+   idempotent, so a relayer crash and retry can never double-credit a stake — and because the
+   deposit was already durably recorded in step 2, the retry loop keeps retrying every
+   unapplied row until the GenLayer write lands, with no action needed from the user. Poll
+   `GET /api/stakes/:txHash` to see a deposit move from `confirmed_onchain`/`retry_pending` to
+   `applied`.
 3. On terminal resolution, the backend relayer reads GenLayer's consensus-derived payout list
    and calls escrow `settle` exactly once.
 4. Winners call escrow `claim(marketId)` directly; the backend never custody-transfers funds.
 
-Set `VITE_BASE_ESCROW_ADDRESS` in the frontend and `BASE_SEPOLIA_RELAYER_PRIVATE_KEY` in the
-backend before running the full flow. Deploy the updated GenLayer contract before using V1:
-its stake method signatures have changed and it is intentionally not compatible with the old
-native-GEN deployment.
+Set `VITE_BASE_ESCROW_ADDRESS` in the frontend and `BASE_ESCROW_ADDRESS` /
+`BASE_SEPOLIA_RELAYER_PRIVATE_KEY` in the backend before running the full flow — the relayer's
+key must be the same key used to deploy `EventWeaverEscrow` (its address is the escrow's
+`relayer` for `settle`) and must also be the GenLayer contract's `relayer` (defaults to
+whichever address deploys the GenLayer contract; rotate it with `set_relayer(...)` if needed).
 
-For the complete V1 migration record, addresses, configuration, lifecycle, reliability design,
-and verification checklist, read **[v1.md](v1.md)**.
+Full writeup of the confirmed-payment and crash-recovery fix — problem, root cause, fix, and
+tests — is in **[review-v1.md](review-v1.md)**. For the complete V1 migration record,
+addresses, configuration, lifecycle, and reliability design, read **[v1.md](v1.md)**.
 
 ## Why this needs GenLayer
 
@@ -149,7 +167,7 @@ Real USDC movement at every hop — no synthetic points:
 
 | Hop | Mechanism |
 | --- | --- |
-| Stake in | wallet approves USDC then calls Base escrow `stake(marketId, amount)`; GenLayer records the matching position |
+| Stake in | wallet approves USDC then calls Base escrow `stake(marketId, side, amount)`; the backend relay confirms the deposit and records the matching GenLayer position — the wallet never calls GenLayer directly |
 | Settlement | the relayer reads GenLayer `get_base_payouts` and calls escrow `settle` once after finalization |
 | Claim out | winner calls Base escrow `claim(marketId)` and receives a real USDC transfer |
 | Fees | 1% protocol + 0.5% creator are withheld from the losing pool when GenLayer calculates allocations |
@@ -163,30 +181,40 @@ All four hops are exercised live on StudioNet (see [docs/CONTRACT.md](docs/CONTR
 │  Frontend     │ ───────────► │  Backend API        │ ─────────────► │  GenLayer StudioNet │
 │  React + Vite │              │  Express on Fly.io  │    reads       │                    │
 │  (Vercel)     │              │  + Fly Postgres     │                │  EventWeaver        │
-└──────┬───────┘              │  indexer + resolver │                │  Intelligent        │
-       │   GenLayer writes    └────────────────────┘                │  Contract           │
-       └───────────────────────────────────────────────────────────►└────────────────────┘
-       │
-       └── Base Sepolia USDC approve, stake, and claim ──► EventWeaverEscrow
+└──────┬───────┘              │  indexer + resolver  │                │  Intelligent        │
+       │   GenLayer writes    │  + stake relay        │───writes─────►│  Contract           │
+       │  (market creation,   └─────────▲──────────┘  record_stake   └────────────────────┘
+       │   adjudication)                │
+       │                                 │ watches Staked events
+       └── Base Sepolia USDC approve + stake(side) ──► EventWeaverEscrow ◄── claim (winner, direct)
 ```
 
 - **Reads** are served from the backend's Postgres mirror (fast, filterable), with a
   live-chain fallback per market.
-- **Writes** go directly from the user's wallet: market and position writes use GenLayer,
-  while USDC approvals, deposits, and claims use Base Sepolia — the backend never holds user keys.
+- **Writes**: market creation and adjudication go directly from the user's wallet to
+  GenLayer; USDC approvals, deposits (with side), and claims go directly to Base Sepolia. A
+  **stake**, however, is never written to GenLayer by the user's wallet — the backend's stake
+  relay is the only caller GenLayer trusts to record one, and only after it has independently
+  confirmed the matching Base Sepolia deposit (see [V1 — USDC on Base Sepolia](#v1--usdc-on-base-sepolia)).
+  The backend never holds user keys for anything the user does themselves.
 - The backend also runs the **automatic deadline resolver** (Intelligent Contracts can't
   wake themselves; the always-on service is the trigger, while the *outcome* is decided
-  trustlessly by validators).
+  trustlessly by validators) and the **stake relay** (same "always-on trigger, trustless
+  outcome" shape: the relay only ever repeats what it already observed on-chain).
 
 Full details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/API.md](docs/API.md)
 
 ## The Intelligent Contract
 
 Single production contract: [`contracts/event_weaver.py`](contracts/event_weaver.py)
-(~1,300 lines, 35 public methods — 17 views, 18 writes, schema-safe signatures).
+(~1,450 lines, 34 public methods — 19 views, 15 writes, schema-safe signatures).
 
 - **Storage**: `TreeMap[u32, Market]`, per-market `DynArray[ChainStep]` with verdict state
-  machines, positions and staker lists keyed by market, plus an append-only activity log.
+  machines, positions and staker lists keyed by market, an append-only activity log, and an
+  `applied_base_tx` set of consumed Base Sepolia deposit tx hashes (stake idempotency).
+- **Trusted relayer**: a `relayer` address (defaults to the deployer, rotatable via
+  `set_relayer`) is the only caller `record_stake` accepts — see
+  [V1 — USDC on Base Sepolia](#v1--usdc-on-base-sepolia) and [review-v1.md](review-v1.md).
 - **Adjudication block** (per step, inside `gl.eq_principle.prompt_comparative`):
   1. Render each evidence URL defensively (a dead source degrades to an error record
      instead of aborting the transaction).
@@ -212,18 +240,27 @@ Reference: [docs/CONTRACT.md](docs/CONTRACT.md)
 
 - Uncaught exceptions and unhandled rejections are logged, not fatal.
 - The indexer, resolver, and Base settlement relay run every five minutes to stay under the
-  shared StudioNet RPC budget. Each loop self-heals with backoff.
+  shared StudioNet RPC budget; the **stake relay** (`backend/src/stakeRelay.js`) runs on a
+  faster cycle (≥15s) since it's watching a separate chain (Base Sepolia) with its own RPC.
+  Every loop self-heals with backoff and retries indefinitely rather than giving up.
 - Fly.io: `auto_stop_machines = "off"`, `min_machines_running = 1`, restart policy
   `always`, HTTP health checks against `/health` (reports db, indexer lag, resolver stats).
 - Works without a database too (in-memory mirror) for zero-config local dev.
 - **RPC budget discipline**: StudioNet's RPC caps at 30 requests/minute, shared across the
-  indexer, resolver, and every live-reading route. `readContract` retries rate-limit errors
-  with backoff; `/api/config` and `/api/portfolio/:address` are short-TTL cached so repeated
-  or near-instant reloads cost zero extra chain reads; the indexer's poll interval is tuned
-  to leave headroom under the cap rather than exhaust it on its own.
+  indexer, resolver, stake relay, and every live-reading route. `readContract` retries
+  rate-limit errors with backoff; `/api/config` and `/api/portfolio/:address` are short-TTL
+  cached so repeated or near-instant reloads cost zero extra chain reads; poll intervals are
+  tuned to leave headroom under the cap rather than exhaust it on their own.
+- **Stake relay** (`backend/src/stakeRelay.js`): scans Base Sepolia for confirmed `Staked`
+  escrow deposits into Postgres's `pending_stakes`, then calls GenLayer `record_stake` for
+  every row that isn't `applied` yet — retried indefinitely on failure. This is what
+  guarantees a recorded stake is always backed by a confirmed payment (regardless of who
+  called the escrow) and that a deposit is never stranded if the GenLayer write fails
+  partway through. See [review-v1.md](review-v1.md).
 
 Endpoints: markets (list/detail/live/activity/resolution), portfolio (positions, quotes,
-balance, notifications), stats, config, health — see [docs/API.md](docs/API.md).
+balance, notifications), stake status (`/api/stakes/:txHash`, `/api/stakes?address=`), stats,
+config, health — see [docs/API.md](docs/API.md).
 
 ## Frontend
 
@@ -234,8 +271,11 @@ balance, notifications), stats, config, health — see [docs/API.md](docs/API.md
   GenLayer resolution report, activity feed, stake/claim panel), Create (visual logic
   builder with validation), Portfolio (positions, live Base escrow claimability,
   notifications).
-- **Wallet**: MetaMask / injected EIP-1193. GenLayer writes record market state while Base
-  Sepolia transactions approve, deposit, and claim six-decimal USDC.
+- **Wallet**: MetaMask / injected EIP-1193. GenLayer writes record market state and
+  adjudication while Base Sepolia transactions approve, deposit (with side), and claim
+  six-decimal USDC. The wallet never calls GenLayer to "finish" a stake — after the deposit
+  confirms, the UI polls `GET /api/stakes/:txHash` while the backend relay records the
+  position, so closing the tab right after depositing doesn't strand anything.
 - **Design system**: "Causal Web" — dark glassmorphism, Logic Blue `#adc6ff`/`#4d8eff`,
   Adjudication Purple `#571bc1`, Emerald `#4edea3`; Geist / Inter / JetBrains Mono;
   custom woven-chain logo and favicon.
@@ -267,25 +307,37 @@ Environment (see `.env.example` in each package):
 | --- | --- | --- |
 | backend | `CONTRACT_ADDRESS` | EventWeaver contract on StudioNet |
 | backend | `DATABASE_URL` | Postgres (optional locally) |
-| backend | `BASE_ESCROW_ADDRESS`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY`, `POLL_INTERVAL_MS`, `RESOLVER_INTERVAL_MS` | V1 USDC settlement and rate-safe ops tuning |
+| backend | `BASE_ESCROW_ADDRESS`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY` | Base Sepolia escrow + the trusted relayer key that signs both `settle()` (escrow) and `record_stake()` (GenLayer) — must be the escrow's `relayer` and the GenLayer contract's `relayer` |
+| backend | `BASE_SEPOLIA_STAKE_CONFIRMATIONS` | blocks to wait before treating a deposit as final (default 5) |
+| backend | `POLL_INTERVAL_MS`, `RESOLVER_INTERVAL_MS` | rate-safe ops tuning |
 | frontend | `VITE_API_URL` | backend base URL |
 | frontend | `VITE_CONTRACT_ADDRESS` | contract address for wallet writes |
+| frontend | `VITE_BASE_ESCROW_ADDRESS`, `VITE_BASE_SEPOLIA_USDC` | Base Sepolia escrow + test USDC addresses for staking |
 
 ## Deployment
 
 Full guide: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Short version:
 
 ```bash
-# 1. Contract → GenLayer StudioNet (constructor: min_creation_bond=0, min_stake=0)
+# 1. Escrow → Base Sepolia (constructor: usdc address, relayer address)
+#    deploy EventWeaverEscrow.sol with the relayer key's address as `relayer_`
+
+# 2. Contract → GenLayer StudioNet (constructor: min_creation_bond=0, min_stake=0)
 genlayer network set studionet
 genlayer deploy --contract contracts/event_weaver.py --args 0 0
-genlayer schema <ADDRESS>   # must print the full 35-method schema
+genlayer schema <ADDRESS>   # must print the full 34-method schema
+# relayer defaults to the deploying address; rotate with set_relayer(...) if it
+# needs to differ from whoever ran `genlayer deploy`
 
-# 2. Backend → Fly.io (24/7)
+# 3. Backend → Fly.io (24/7)
 cd backend && fly deploy
-fly secrets set CONTRACT_ADDRESS=0x… CORS_ORIGINS=https://your-app.vercel.app
+fly secrets set \
+  CONTRACT_ADDRESS=0x… \
+  BASE_ESCROW_ADDRESS=0x… \
+  BASE_SEPOLIA_RELAYER_PRIVATE_KEY=0x… \
+  CORS_ORIGINS=https://your-app.vercel.app
 
-# 3. Frontend → Vercel
+# 4. Frontend → Vercel
 cd frontend && vercel deploy --prod
 ```
 
@@ -298,23 +350,26 @@ cd frontend && vercel deploy --prod
 | Gate | Command | Status |
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
-| Schema extraction | verified against the pinned runner SDK | 35 methods |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **29 passing** |
-| Live integration | StudioNet: create → Base USDC stake → adjudicate real URLs → Base escrow settlement → claim | verified |
+| Schema extraction | verified against the pinned runner SDK | 34 methods |
+| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **31 passing** |
+| Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
 The direct suite covers creation validation, USDC-denominated stake accounting, settlement math with fees,
 verdict handling (high-confidence, chain-break, inconclusive, malformed LLM output),
-adjudication permissions, expiry, cancellation/refunds, admin controls, and 5 adversarial
-tests proving fabricated future/stale timestamps cannot change betting access or force a
-payout (see [Authenticated clock design](#authenticated-clock-design)).
+adjudication permissions, expiry, cancellation/refunds, admin controls, 5 adversarial tests
+proving fabricated future/stale timestamps cannot change betting access or force a payout
+(see [Authenticated clock design](#authenticated-clock-design)), and the relayer-only staking
+tests added for the confirmed-payment fix — only-the-relayer-may-stake, idempotent replay of
+the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
+[review-v1.md](review-v1.md)).
 
 ## Deployed addresses
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x96727fd9E35036903B89829E1349dB5A83e7c48f` (GenLayer StudioNet, V1 USDC ledger) |
-| Base Sepolia USDC escrow | [`0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C`](https://sepolia.basescan.org/address/0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C) |
+| Intelligent Contract | `0x0551246DcB7de220474b5a479820AA18F1DDAB5C` (GenLayer StudioNet, V1 USDC ledger, relayer-gated staking) |
+| Base Sepolia USDC escrow | [`0x83D73b3217314aF32D833e18d90356299835d0a5`](https://sepolia.basescan.org/address/0x83D73b3217314aF32D833e18d90356299835d0a5) (side-carrying `stake(marketId, side, amount)`) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-prod.fly.dev (Fly app `eventweaver-api-prod` + Postgres `eventweaver-db-new`, org `priscilla-george`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |
@@ -322,6 +377,11 @@ payout (see [Authenticated clock design](#authenticated-clock-design)).
 > The backend and database were migrated to the `priscilla-george` Fly.io organization. The
 > legacy database was deleted. The indexer prunes rows outside the active contract's id range,
 > preventing retired markets from appearing as stakeable.
+>
+> The Intelligent Contract and escrow above are a fresh V1.1 pair (relayer-gated
+> `record_stake`, side-carrying escrow deposits) — not backward-compatible with the earlier
+> V1 addresses, whose `stake_yes`/`stake_no` accepted an unverified client-supplied amount.
+> See [review-v1.md](review-v1.md) for why they were replaced.
 
 ## Authenticated clock design
 
@@ -372,12 +432,14 @@ backend/src/
   server.js                    Express app, never-die posture, health
   indexer.js                   chain → Postgres mirror (self-healing poller)
   resolver.js                  automatic deadline adjudication trigger
+  stakeRelay.js                Base Sepolia deposit → GenLayer record_stake, with retry
+  baseSepolia.js                Base Sepolia settlement relay (payouts, not stakes)
   routes.js / db.js / genlayer.js / config.js
 frontend/src/
   pages/                       Landing, Markets, MarketDetail, Create, Portfolio
   components/                  Nav, Footer, MarketCard, ChainViz, Chips, Toast, Walkthrough, Logo
-  lib/                         wallet (genlayer-js + MetaMask), api client, types, versionCheck (stale-build reload)
-tests/direct/                  29 in-memory contract tests (gltest.direct)
+  lib/                         wallet (genlayer-js + MetaMask), baseSepolia (escrow calls), api client, types, versionCheck (stale-build reload)
+tests/direct/                  31 in-memory contract tests (gltest.direct)
 docs/                          ARCHITECTURE · API · CONTRACT · DEPLOYMENT · images/
 v1.md                          V1 USDC on Base Sepolia architecture and operations
 .github/workflows/ci.yml       lint + tests + builds
@@ -385,6 +447,7 @@ MEMORY.md                      living decision log
 SUBMISSION.md                  review submission summary
 review.md                      authenticated-clock fix: request, root cause, fix, tests
 review2.md                     "Failed to fetch" fix: stale-build detection, RPC rate-limit hardening
+review-v1.md                   confirmed-payment + crash-recovery fix: request, root cause, fix, tests
 ```
 
 ## Hard-won GenLayer lessons

@@ -7,6 +7,29 @@ import { CONTRACT_ADDRESS, useWallet, contractWrite } from '../lib/wallet';
 import { claimUsdc, depositStakeUsdc, formatUsdc, parseUsdc } from '../lib/baseSepolia';
 import { useToast } from '../components/Toast';
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Poll the backend relayer until it has turned this confirmed Base Sepolia
+ * deposit into a GenLayer position. The deposit itself already succeeded by
+ * the time this runs, so a timeout here is informational, not a failure:
+ * the relayer keeps retrying in the background regardless of whether this
+ * tab is still open, and the stake will show up on a later refresh. */
+async function waitForStakeApplied(txHash: string, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const status = await api.stakeStatus(txHash);
+      if (status.status === 'applied') return;
+    } catch { /* not scanned yet (still awaiting confirmations) — keep polling */ }
+    await sleep(4000);
+  }
+  throw new Error(
+    'Payment confirmed — still recording your stake. Refresh in a minute; it will appear automatically once applied.'
+  );
+}
+
 /** Market detail — the Causal Chain View: nodes, reasoning, trading panel. */
 export default function MarketDetail() {
   const { id } = useParams();
@@ -36,7 +59,7 @@ export default function MarketDetail() {
           const [pos, portfolio] = await Promise.all([
             readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0x96727fd9E35036903B89829E1349dB5A83e7c48f') as `0x${string}`,
+              '0x0551246DcB7de220474b5a479820AA18F1DDAB5C') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
             }),
@@ -78,8 +101,15 @@ export default function MarketDetail() {
       `stake_${side}`,
       async () => {
         const units = parseUsdc(amount);
-        await depositStakeUsdc(marketId, units);
-        return contractWrite(client!, side === 'yes' ? 'stake_yes' : 'stake_no', [marketId, units]);
+        // The deposit is the entire user-facing action. A backend relayer
+        // watches the escrow for this confirmed deposit and records the
+        // matching GenLayer position on its own — there is no client call
+        // that "finishes" the stake, so a browser closed right after the
+        // deposit confirms doesn't strand it: the relayer applies it
+        // independently and keeps retrying until it does.
+        const txHash = await depositStakeUsdc(marketId, side, units);
+        push('info', 'Payment confirmed on Base Sepolia — recording your stake…');
+        await waitForStakeApplied(txHash);
       },
       `Staked ${amount} USDC on ${side.toUpperCase()} via Base Sepolia escrow.`
     );

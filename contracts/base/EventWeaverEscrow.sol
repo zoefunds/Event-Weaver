@@ -18,7 +18,7 @@ contract EventWeaverEscrow {
     mapping(uint256 => MarketPool) public pools;
     mapping(uint256 => mapping(address => uint256)) public claimable;
 
-    event Staked(uint256 indexed marketId, address indexed staker, uint256 amount);
+    event Staked(uint256 indexed marketId, address indexed staker, uint8 side, uint256 amount);
     event Settled(uint256 indexed marketId, uint256 recipientCount, uint256 allocated);
     event Claimed(uint256 indexed marketId, address indexed recipient, uint256 amount);
     event RelayerUpdated(address indexed relayer);
@@ -35,11 +35,19 @@ contract EventWeaverEscrow {
     }
 
     /// @dev Wallet must approve this contract first. Amount is USDC base units (6 decimals).
-    function stake(uint256 marketId, uint256 amount) external nonReentrant {
+    /// @param side 1 = YES, 2 = NO. Carried in the deposit itself (and the
+    /// Staked event) so the payment is fully self-describing: the off-chain
+    /// relayer that turns deposits into GenLayer positions (see
+    /// backend/src/stakeRelay.js) never has to trust a second, unauthenticated
+    /// message from the staker's browser to learn which side they meant —
+    /// that also covers a deposit made directly against this contract by
+    /// anyone interacting outside the website.
+    function stake(uint256 marketId, uint8 side, uint256 amount) external nonReentrant {
         require(amount > 0 && !pools[marketId].settled, "invalid stake");
+        require(side == 1 || side == 2, "invalid side");
         require(usdc.transferFrom(msg.sender, address(this), amount), "USDC transferFrom failed");
         pools[marketId].deposited += amount;
-        emit Staked(marketId, msg.sender, amount);
+        emit Staked(marketId, msg.sender, side, amount);
     }
 
     /// @notice Idempotency is enforced on-chain: one finalized payout list per market.

@@ -141,6 +141,43 @@ router.get('/api/portfolio/:address', asyncRoute(async (req, res) => {
   }
 }));
 
+/** Poll status of a single confirmed USDC deposit as it moves through the
+ * relay: 'confirmed_onchain'/'retry_pending' (payment landed, GenLayer write
+ * still pending or being retried) -> 'applied' (position recorded), or
+ * 404 if the deposit hasn't been scanned yet (still awaiting confirmations). */
+router.get('/api/stakes/:txHash', asyncRoute(async (req, res) => {
+  const txHash = req.params.txHash.toLowerCase();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) return res.status(400).json({ error: 'invalid tx hash' });
+  const row = await getStakeByTxHash(txHash);
+  if (!row) return res.status(404).json({ status: 'pending_confirmation' });
+  res.json({
+    baseTxHash: row.base_tx_hash,
+    marketId: Number(row.market_id),
+    status: row.status,
+    attempts: row.attempts,
+    lastError: row.last_error,
+    genlayerTxHash: row.genlayer_tx_hash,
+  });
+}));
+
+/** All of an address's confirmed deposits and where each stands in the relay
+ * — lets the frontend surface "still recording" or "needs attention" state
+ * without a wallet/RPC round trip. */
+router.get('/api/stakes', asyncRoute(async (req, res) => {
+  const address = req.query.address;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address ?? '')) return res.status(400).json({ error: 'invalid address' });
+  const rows = await listStakesForAddress(address, 50);
+  res.json(rows.map((row) => ({
+    baseTxHash: row.base_tx_hash,
+    marketId: Number(row.market_id),
+    side: row.side,
+    amount: row.amount,
+    status: row.status,
+    attempts: row.attempts,
+    lastError: row.last_error,
+  })));
+}));
+
 router.get('/api/stats', asyncRoute(async (_req, res) => {
   res.json(await getStats());
 }));

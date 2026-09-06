@@ -26,7 +26,7 @@ Runner: `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` (docs
 
 ## V1 USDC settlement
 
-The GenLayer contract is the outcome and allocation ledger, not a native-token custodian in V1. It records USDC-denominated positions in six-decimal units and exposes `get_base_payouts(market_id)` after a terminal result. The backend relayer copies that immutable allocation list into the Base Sepolia escrow at `0x23Aca542DFE6FEF14d29A5184818a954eafA7B9C`. Each recipient then claims USDC directly from the escrow. The escrow's `claimable` view is the authoritative post-claim balance.
+The GenLayer contract is the outcome and allocation ledger, not a native-token custodian in V1. It records USDC-denominated positions in six-decimal units and exposes `get_base_payouts(market_id)` after a terminal result. The backend relayer copies that immutable allocation list into the Base Sepolia escrow at `0x83D73b3217314aF32D833e18d90356299835d0a5`. Each recipient then claims USDC directly from the escrow. The escrow's `claimable` view is the authoritative post-claim balance.
 
 ## Fees & settlement
 
@@ -38,8 +38,11 @@ refund allocation. There is no V1 `withdraw` of native GEN.
 
 - Deploy + `genlayer schema` loads (35 methods).
 - `create_market` with 2–3 step chains (CLI and JS paths).
-- `stake_yes(market_id, amount)` records a confirmed Base Sepolia USDC stake in the
-  GenLayer consensus ledger (activity log + pool balances).
+- `record_stake(market_id, staker, side, amount, base_tx_hash)` — relayer-only — records a
+  confirmed Base Sepolia USDC stake in the GenLayer consensus ledger (activity log + pool
+  balances) on behalf of `staker`, once the backend stake relay has observed the matching
+  `Staked` event finalize on Base Sepolia. `base_tx_hash` is idempotent, so a relayer retry
+  after a crash between confirming the deposit and recording the stake is a safe no-op.
 - Final payouts come from `get_base_payouts`; the Base escrow relayer settles them and
   winners self-claim USDC from Base Sepolia.
 - `request_resolution` fetched `apple.com/newsroom` live, LLM produced a correct

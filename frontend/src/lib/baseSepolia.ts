@@ -30,6 +30,9 @@ function word(value: bigint | string): string {
 function addressWord(address: string) { return word(address); }
 function calldata(selector: string, values: (bigint | string)[]) { return selector + values.map(word).join(''); }
 
+export const STAKE_SIDE = { YES: 1n, NO: 2n } as const;
+export type StakeSide = 'yes' | 'no';
+
 async function send(to: string, data: string, gas = '0x30d40') {
   const eth = provider();
   const accounts = await eth.request({ method: 'eth_accounts' }) as string[];
@@ -51,15 +54,21 @@ async function waitForConfirmation(hash: string): Promise<void> {
   throw new Error('Timed out waiting for Base Sepolia confirmation.');
 }
 
-/** Approve and deposit USDC. The caller then records the identical amount on
- * GenLayer, keeping outcome logic and custody on their appropriate chains. */
-export async function depositStakeUsdc(marketId: number, amount: bigint) {
+/** Approve and deposit USDC, side included in the on-chain call itself.
+ * This is the ONLY step the user performs: a backend relayer watches the
+ * escrow for confirmed `Staked` deposits and records the matching GenLayer
+ * position on its own (see backend/src/stakeRelay.js) — the frontend never
+ * calls the contract to self-report a stake, so a recorded stake is always
+ * backed by a real, confirmed payment, even for deposits made outside the
+ * website. Returns the deposit tx hash, which the caller can poll via
+ * api.stakeStatus() to know when the relayer has applied it. */
+export async function depositStakeUsdc(marketId: number, side: StakeSide, amount: bigint) {
   if (!ESCROW_ADDRESS || !/^0x[0-9a-fA-F]{40}$/.test(ESCROW_ADDRESS)) throw new Error('Base escrow is not configured yet.');
   if (amount <= 0n) throw new Error('Enter a positive USDC amount.');
   await ensureBaseSepolia();
   const approvalTx = await send(USDC_ADDRESS, calldata('0x095ea7b3', [addressWord(ESCROW_ADDRESS), amount]), '0x186a0');
   await waitForConfirmation(approvalTx);
-  const stakeTx = await send(ESCROW_ADDRESS, calldata('0x7b0472f0', [BigInt(marketId), amount]), '0x30d40');
+  const stakeTx = await send(ESCROW_ADDRESS, calldata('0xf99b7d75', [BigInt(marketId), STAKE_SIDE[side.toUpperCase() as 'YES' | 'NO'], amount]), '0x30d40');
   await waitForConfirmation(stakeTx);
   return stakeTx;
 }

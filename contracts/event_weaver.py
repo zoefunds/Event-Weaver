@@ -330,6 +330,12 @@ class EventWeaver(gl.Contract):
 
     # ---- ownership / config -------------------------------------------------
     owner: Address
+    # Trusted operational identity allowed to call record_stake(). It only
+    # ever does so after independently observing a finalized USDC deposit on
+    # the Base Sepolia escrow (see backend/src/stakeRelay.js) — no other
+    # address can create a Position, so every recorded stake is backed by a
+    # confirmed payment regardless of how that payment was made.
+    relayer: Address
     paused: bool
     protocol_fee_bps: u32
     creator_fee_bps: u32
@@ -352,6 +358,11 @@ class EventWeaver(gl.Contract):
     # Addresses that staked each market. Needed by the Base Sepolia relayer to
     # read a finalized, consensus-derived payout list without off-chain DB trust.
     market_stakers: TreeMap[u32, DynArray[Address]]
+
+    # Base Sepolia escrow deposit tx hashes already turned into a position,
+    # keyed lowercase. Makes record_stake idempotent: replaying a hash (a
+    # relayer retry, or two relayer instances racing) can never double-credit.
+    applied_base_tx: TreeMap[str, bool]
 
     # ---- platform metrics ---------------------------------------------------
     total_volume: u256
@@ -376,6 +387,7 @@ class EventWeaver(gl.Contract):
             min_stake: minimum USDC base units per stake action. 0 disables.
         """
         self.owner = gl.message.sender_address
+        self.relayer = gl.message.sender_address
         self.paused = False
         self.protocol_fee_bps = u32(DEFAULT_PROTOCOL_FEE_BPS)
         self.creator_fee_bps = u32(DEFAULT_CREATOR_FEE_BPS)
@@ -399,6 +411,10 @@ class EventWeaver(gl.Contract):
     def _only_owner(self) -> None:
         if gl.message.sender_address != self.owner:
             raise gl.vm.UserError(ERR_EXPECTED + "only the owner may call this")
+
+    def _only_relayer(self) -> None:
+        if gl.message.sender_address != self.relayer:
+            raise gl.vm.UserError(ERR_EXPECTED + "only the relayer may call this")
 
     def _now_ts(self) -> int:
         """Authenticated, consensus-agreed clock. GenVM patches
@@ -868,9 +884,11 @@ Rules:
         self._log(market_id, "CREATE", sender, bond, now_ts, title.strip()[:100])
         return market_id
 
-    def _stake(self, market_id: int, side: int, amount: int) -> None:
-        """Shared USDC-stake accounting core. Escrow custody happens first on
-        Base Sepolia; this consensus ledger records the matching position."""
+    def _stake_for(self, market_id: int, staker: Address, side: int, amount: int) -> None:
+        """Shared USDC-stake accounting core, crediting `staker` — not
+        necessarily gl.message.sender, since the caller is always the
+        relayer acting on a confirmed Base Sepolia deposit (see
+        record_stake)."""
         self._not_paused()
         now_ts = self._now_ts()
         market = self._get_market(market_id)
@@ -882,8 +900,7 @@ Rules:
         _require(amount > 0, "stake amount must be positive")
         _require(amount >= int(self.min_stake), "stake below minimum")
 
-        sender = gl.message.sender_address
-        pos = self._get_or_create_position(market_id, sender)
+        pos = self._get_or_create_position(market_id, staker)
 
         if side == SIDE_YES:
             market.yes_pool = u256(int(market.yes_pool) + amount)
@@ -897,20 +914,35 @@ Rules:
         market.stake_count = u32(int(market.stake_count) + 1)
         self.total_volume = u256(int(self.total_volume) + amount)
         self.total_stakes = u64(int(self.total_stakes) + 1)
-        self._record_user_market(sender, market_id)
-        self._record_market_staker(sender, market_id)
-        self._log(market_id, kind, sender, amount, now_ts, "")
+        self._record_user_market(staker, market_id)
+        self._record_market_staker(staker, market_id)
+        self._log(market_id, kind, staker, amount, now_ts, "")
 
     @gl.public.write
-    def stake_yes(self, market_id: int, amount: int) -> None:
-        """Record a USDC stake on YES after the wallet has deposited the same
-        six-decimal amount into EventWeaverEscrow on Base Sepolia."""
-        self._stake(market_id, SIDE_YES, int(amount))
+    def record_stake(self, market_id: int, staker: str, side: int, amount: int, base_tx_hash: str) -> None:
+        """Relayer-only: record `staker`'s USDC stake after the relayer has
+        independently confirmed a matching deposit finalized in
+        EventWeaverEscrow on Base Sepolia.
 
-    @gl.public.write
-    def stake_no(self, market_id: int, amount: int) -> None:
-        """Record a USDC stake on NO after its Base Sepolia escrow deposit."""
-        self._stake(market_id, SIDE_NO, int(amount))
+        This is the *only* way a Position is ever created — there is no
+        public, caller-funded stake entry point — so a recorded stake is
+        always backed by a confirmed payment, including deposits made
+        directly against the escrow contract rather than through the
+        website.
+
+        base_tx_hash is the escrow deposit's transaction hash and makes this
+        call idempotent: replaying the same hash (e.g. the relayer retrying
+        after it crashed between confirming the deposit and recording the
+        stake) is a safe no-op instead of a double-credit.
+        """
+        self._only_relayer()
+        _require(side in (SIDE_YES, SIDE_NO), "side must be YES (1) or NO (2)")
+        tx_key = base_tx_hash.strip().lower()
+        _require(bool(tx_key), "base_tx_hash is required")
+        if self.applied_base_tx.get(tx_key):
+            return
+        self.applied_base_tx[tx_key] = True
+        self._stake_for(market_id, Address(staker), side, int(amount))
 
     @gl.public.write
     def claim(self, market_id: int) -> int:
@@ -1160,6 +1192,14 @@ Rules:
         self.owner = Address(new_owner)
 
     @gl.public.write
+    def set_relayer(self, new_relayer: str) -> None:
+        """Owner: rotate the trusted relayer identity allowed to call
+        record_stake() (e.g. when the operational key backing the Base
+        Sepolia relay is rotated)."""
+        self._only_owner()
+        self.relayer = Address(new_relayer)
+
+    @gl.public.write
     def sweep_protocol_fees(self) -> int:
         """Owner: clear the informational USDC fee counter. Actual USDC fees
         remain in the Base Sepolia escrow and are handled there."""
@@ -1253,6 +1293,12 @@ Rules:
         if arr is None:
             return []
         return [int(x) for x in arr]
+
+    @gl.public.view
+    def is_stake_applied(self, base_tx_hash: str) -> bool:
+        """Whether record_stake has already consumed this Base Sepolia
+        deposit tx hash — lets the relayer skip redundant retries."""
+        return bool(self.applied_base_tx.get(base_tx_hash.strip().lower()))
 
     @gl.public.view
     def get_balance_of(self, address: str) -> int:
@@ -1396,6 +1442,7 @@ Rules:
     def get_config(self) -> dict:
         return {
             "owner": self.owner.as_hex,
+            "relayer": self.relayer.as_hex,
             "paused": bool(self.paused),
             "protocol_fee_bps": int(self.protocol_fee_bps),
             "creator_fee_bps": int(self.creator_fee_bps),
