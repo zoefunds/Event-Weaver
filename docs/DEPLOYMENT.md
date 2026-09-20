@@ -28,7 +28,7 @@ cd backend
 fly launch --no-deploy --copy-config --name eventweaver-api-prod
 fly postgres create --name eventweaver-db-new --region iad
 fly postgres attach eventweaver-db-new --app eventweaver-api-prod   # sets DATABASE_URL
-fly secrets set CONTRACT_ADDRESS=0x0551246DcB7de220474b5a479820AA18F1DDAB5C \
+fly secrets set CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
   BASE_ESCROW_ADDRESS=0x83D73b3217314aF32D833e18d90356299835d0a5 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
   POLL_INTERVAL_MS=300000 \
@@ -48,7 +48,7 @@ resolver, and settlement relay poll every five minutes to stay below the shared 
 cd frontend
 vercel --prod \
   -e VITE_API_URL=https://eventweaver-api-prod.fly.dev \
-  -e VITE_CONTRACT_ADDRESS=0x0551246DcB7de220474b5a479820AA18F1DDAB5C \
+  -e VITE_CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
   -e VITE_BASE_ESCROW_ADDRESS=0x83D73b3217314aF32D833e18d90356299835d0a5 \
   -e VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```

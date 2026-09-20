@@ -50,6 +50,10 @@ export interface Position {
   yes_amount: number;
   no_amount: number;
   claimed: boolean;
+  /** Confirmed deposit(s) that reached record_stake after the market's
+   * staking window had already closed — refunded at face value, never part
+   * of yes_amount/no_amount. */
+  late_amount: number;
 }
 
 export interface PayoutQuote {

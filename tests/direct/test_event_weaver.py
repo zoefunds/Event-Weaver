@@ -239,14 +239,80 @@ def test_stake_zero_value_reverts():
             relayer_stake(vm, c, 0, BOB, SIDE_YES, 0)
 
 
-def test_stake_after_deadline_reverts():
+def test_stake_after_deadline_is_refunded_not_pooled():
+    """A confirmed Base Sepolia deposit can reach record_stake after the
+    market's deadline — the escrow contract has no deadline of its own, so
+    this happens whenever the relayer falls behind (crash, RPC rate limit,
+    restart) between the deposit confirming and the write landing on
+    GenLayer. Before the fix this reverted, applied_base_tx was never set
+    (a revert discards the whole write), and the relayer retried forever
+    with the same failing outcome — the deposit stayed confirmed on Base
+    Sepolia and uncredited on GenLayer forever. Now it must be credited in
+    full as a late refund instead of being dropped, and must not enter the
+    YES/NO pools (it never had a chance to be at risk, so it must not shift
+    other stakers' odds)."""
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
         vm.warp(iso(DEADLINE + 1))  # advance the consensus clock past the deadline
-        with vm.expect_revert():
-            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)  # no longer reverts
+
+        pos = c.get_position(0, hx(BOB))
+        assert pos["yes_amount"] == 0
+        assert pos["no_amount"] == 0
+        assert pos["late_amount"] == GEN
+        assert c.get_pool(0)["yes_pool"] == 0  # never entered the pool
+        assert c.get_platform_stats()["total_volume"] == GEN
+
+
+def test_late_refund_is_idempotent_and_claimable_after_expiry():
+    """The full recovery story: deposit confirms before the deadline, the
+    relayer only gets to it after — the late refund is recorded once
+    (retries of the same base_tx_hash are a no-op, same as a normal stake),
+    and once the market reaches a terminal state the staker can claim their
+    principal back in full even though they hold no YES/NO stake at all."""
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.warp(iso(DEADLINE + 1))
+        tx_hash = "0x" + "cd" * 32
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 3 * GEN, tx_hash=tx_hash)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 3 * GEN, tx_hash=tx_hash)  # retry: no double credit
+        assert c.get_position(0, hx(BOB))["late_amount"] == 3 * GEN
+
+        c.expire_market(0)  # deadline passed with no full chain → EXPIRED
+        payouts = c.get_base_payouts(0)
+        assert len(payouts) == 1
+        assert same(payouts[0]["address"], hx(BOB))
+        assert payouts[0]["amount"] == 3 * GEN
+
+        vm.sender = BOB
+        payout = c.claim(0)
+        assert payout == 3 * GEN
+        with vm.expect_revert():  # already claimed
+            c.claim(0)
+
+
+def test_late_refund_after_market_already_resolved():
+    """A deposit can also confirm before the deadline but only reach
+    record_stake after the market has already left OPEN/RESOLVING (e.g. it
+    was resolved or cancelled while the relayer was stuck retrying). This
+    must be refunded the same way as a post-deadline deposit, not dropped."""
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.sender = ALICE
+        c.cancel_market(0)  # no stakes yet, creator may cancel freely
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)  # arrives after cancellation
+        pos = c.get_position(0, hx(BOB))
+        assert pos["yes_amount"] == 0
+        assert pos["late_amount"] == GEN
+
+        vm.sender = BOB
+        assert c.refund_cancelled(0) == GEN
 
 
 def test_only_relayer_may_record_a_stake():
@@ -586,17 +652,19 @@ def test_fabricated_future_timestamp_cannot_open_early_adjudication_rights():
 def test_fabricated_future_timestamp_cannot_bypass_staking_deadline():
     """Before the fix, a caller could pass now_ts <= deadline_ts even after
     the real deadline had passed. Now the deadline check reads the
-    consensus clock directly, so staking is refused the instant that
-    clock crosses the deadline — independent of anything the caller sends."""
+    consensus clock directly, so a stake can never enter the YES/NO pool
+    once that clock crosses the deadline — independent of anything the
+    caller sends. It is still credited (as a late refund, not pooled) rather
+    than reverted — see test_stake_after_deadline_is_refunded_not_pooled."""
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
 
         vm.warp(iso(DEADLINE + 1))
-        with vm.expect_revert():
-            relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
         assert c.get_pool(0)["yes_pool"] == 0
+        assert c.get_position(0, hx(BOB))["late_amount"] == GEN
 
 
 def test_fabricated_stale_timestamp_cannot_delay_or_avoid_expiry():

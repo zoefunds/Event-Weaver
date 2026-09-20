@@ -143,6 +143,9 @@ class Position:
     yes_amount: u256
     no_amount: u256
     claimed: bool
+    late_amount: u256          # confirmed deposit(s) recorded after the market's
+                                # staking window had already closed — refunded
+                                # at face value, never entered into yes/no pools
 
 
 @allow_storage
@@ -453,7 +456,7 @@ class EventWeaver(gl.Contract):
         pos = self.positions.get(key)
         if pos is None:
             self.positions[key] = Position(
-                yes_amount=u256(0), no_amount=u256(0), claimed=False
+                yes_amount=u256(0), no_amount=u256(0), claimed=False, late_amount=u256(0)
             )
             pos = self.positions[key]
         return pos
@@ -918,6 +921,36 @@ Rules:
         self._record_market_staker(staker, market_id)
         self._log(market_id, kind, staker, amount, now_ts, "")
 
+    def _credit_late_stake(self, market_id: int, staker: Address, amount: int) -> None:
+        """Credit a confirmed Base Sepolia deposit that only reached
+        record_stake after its market's staking window had already closed
+        (deadline passed, or the market moved past OPEN/RESOLVING) — e.g.
+        because the relayer fell behind (crash, RPC rate limit, restart)
+        after the deposit had already confirmed on-chain.
+
+        The deposit is real money and must never be silently dropped, but it
+        never had a chance to participate in the market, so it is refunded
+        at face value via `late_amount` rather than entering yes_pool/
+        no_pool, where it would change payout odds after the fact for every
+        other staker."""
+        self._not_paused()
+        now_ts = self._now_ts()
+        self._get_market(market_id)
+        _require(amount > 0, "stake amount must be positive")
+        pos = self._get_or_create_position(market_id, staker)
+        pos.late_amount = u256(int(pos.late_amount) + amount)
+        self.total_volume = u256(int(self.total_volume) + amount)
+        self._record_user_market(staker, market_id)
+        self._record_market_staker(staker, market_id)
+        self._log(
+            market_id,
+            "STAKE_LATE_REFUND",
+            staker,
+            amount,
+            now_ts,
+            "deposit confirmed after staking window closed; refunded in full",
+        )
+
     @gl.public.write
     def record_stake(self, market_id: int, staker: str, side: int, amount: int, base_tx_hash: str) -> None:
         """Relayer-only: record `staker`'s USDC stake after the relayer has
@@ -934,6 +967,17 @@ Rules:
         call idempotent: replaying the same hash (e.g. the relayer retrying
         after it crashed between confirming the deposit and recording the
         stake) is a safe no-op instead of a double-credit.
+
+        The escrow contract has no deadline of its own (see
+        EventWeaverEscrow.stake), so a deposit can confirm on Base Sepolia
+        before a market's deadline while the relayer is delayed (crash,
+        rate limit, downtime) into applying it here after the deadline has
+        passed, or after the market has already left OPEN/RESOLVING. Rather
+        than reverting — which would leave the deposit permanently
+        unrecorded, since applied_base_tx is only set on a successful write
+        and a reverted call is retried forever with the same failing
+        outcome — that case is routed to `_credit_late_stake`, which
+        refunds the deposit at face value without affecting market odds.
         """
         self._only_relayer()
         _require(side in (SIDE_YES, SIDE_NO), "side must be YES (1) or NO (2)")
@@ -942,7 +986,15 @@ Rules:
         if self.applied_base_tx.get(tx_key):
             return
         self.applied_base_tx[tx_key] = True
-        self._stake_for(market_id, Address(staker), side, int(amount))
+        market = self._get_market(market_id)
+        now_ts = self._now_ts()
+        staking_window_open = (
+            int(market.status) in (STATUS_OPEN, STATUS_RESOLVING) and now_ts <= int(market.deadline_ts)
+        )
+        if staking_window_open:
+            self._stake_for(market_id, Address(staker), side, int(amount))
+        else:
+            self._credit_late_stake(market_id, Address(staker), int(amount))
 
     @gl.public.write
     def claim(self, market_id: int) -> int:
@@ -970,10 +1022,11 @@ Rules:
         my_winning_stake = (
             int(pos.yes_amount) if status == STATUS_RESOLVED_YES else int(pos.no_amount)
         )
-        _require(my_winning_stake > 0, "no winning stake to claim")
+        late = int(pos.late_amount)
+        _require(my_winning_stake > 0 or late > 0, "no winning stake to claim")
 
         share = (distributable * my_winning_stake) // winning_pool if winning_pool > 0 else 0
-        payout = my_winning_stake + share
+        payout = my_winning_stake + share + late
         pos.claimed = True
         self._log(market_id, "CLAIM", sender, payout, now_ts, "")
         return payout
@@ -989,7 +1042,7 @@ Rules:
         pos = self.positions.get(key)
         _require(pos is not None, "no position in this market")
         _require(not pos.claimed, "already refunded")
-        refund = int(pos.yes_amount) + int(pos.no_amount)
+        refund = int(pos.yes_amount) + int(pos.no_amount) + int(pos.late_amount)
         _require(refund > 0, "nothing to refund")
         pos.claimed = True
         self._log(market_id, "CLAIM", sender, refund, now_ts, "refund")
@@ -1187,17 +1240,25 @@ Rules:
 
     @gl.public.write
     def set_owner(self, new_owner: str) -> None:
-        """Owner: transfer ownership to a new address (hex string)."""
+        """Owner: transfer ownership to a new address (hex string or an
+        already-constructed Address — see set_relayer for why both must be
+        accepted)."""
         self._only_owner()
-        self.owner = Address(new_owner)
+        self.owner = new_owner if isinstance(new_owner, Address) else Address(new_owner)
 
     @gl.public.write
     def set_relayer(self, new_relayer: str) -> None:
         """Owner: rotate the trusted relayer identity allowed to call
         record_stake() (e.g. when the operational key backing the Base
-        Sepolia relay is rotated)."""
+        Sepolia relay is rotated).
+
+        Accepts either a plain address string or an already-constructed
+        Address — some callers (e.g. the `genlayer write` CLI's own address
+        auto-detection for a 0x-prefixed 40-hex-char argument) pass an
+        Address value into this str-typed parameter regardless, and
+        Address(Address(...)) raises."""
         self._only_owner()
-        self.relayer = Address(new_relayer)
+        self.relayer = new_relayer if isinstance(new_relayer, Address) else Address(new_relayer)
 
     @gl.public.write
     def sweep_protocol_fees(self) -> int:
@@ -1280,11 +1341,12 @@ Rules:
         key = self._position_key(market_id, Address(address))
         pos = self.positions.get(key)
         if pos is None:
-            return {"yes_amount": 0, "no_amount": 0, "claimed": False}
+            return {"yes_amount": 0, "no_amount": 0, "claimed": False, "late_amount": 0}
         return {
             "yes_amount": int(pos.yes_amount),
             "no_amount": int(pos.no_amount),
             "claimed": bool(pos.claimed),
+            "late_amount": int(pos.late_amount),
         }
 
     @gl.public.view
@@ -1343,11 +1405,11 @@ Rules:
         claimable = 0
         if not pos.claimed:
             if status == STATUS_RESOLVED_YES:
-                claimable = hypothetical_yes
+                claimable = hypothetical_yes + int(pos.late_amount)
             elif status in (STATUS_RESOLVED_NO, STATUS_EXPIRED):
-                claimable = hypothetical_no
+                claimable = hypothetical_no + int(pos.late_amount)
             elif status == STATUS_CANCELLED:
-                claimable = int(pos.yes_amount) + int(pos.no_amount)
+                claimable = int(pos.yes_amount) + int(pos.no_amount) + int(pos.late_amount)
 
         return {
             "claimable": claimable,
@@ -1377,10 +1439,14 @@ Rules:
             if pos is None:
                 continue
             if status == STATUS_CANCELLED:
-                payout = int(pos.yes_amount) + int(pos.no_amount)
+                payout = int(pos.yes_amount) + int(pos.no_amount) + int(pos.late_amount)
             else:
                 winning_stake = int(pos.yes_amount) if status == STATUS_RESOLVED_YES else int(pos.no_amount)
-                payout = winning_stake + ((distributable * winning_stake) // winning_pool if winning_pool > 0 else 0)
+                payout = (
+                    winning_stake
+                    + ((distributable * winning_stake) // winning_pool if winning_pool > 0 else 0)
+                    + int(pos.late_amount)
+                )
             if payout > 0:
                 rows.append({"address": addr.as_hex, "amount": payout})
         return rows

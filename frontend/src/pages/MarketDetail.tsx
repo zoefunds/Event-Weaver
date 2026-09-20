@@ -66,7 +66,7 @@ export default function MarketDetail() {
           const [pos, portfolio] = await Promise.all([
             readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0x0551246DcB7de220474b5a479820AA18F1DDAB5C') as `0x${string}`,
+              '0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
             }),
@@ -304,7 +304,7 @@ export default function MarketDetail() {
               </button>
             )}
 
-            {position && (position.yes_amount > 0 || position.no_amount > 0) && (
+            {position && (position.yes_amount > 0 || position.no_amount > 0 || position.late_amount > 0) && (
               <div className="mt-6 space-y-2 border-t border-white/5 pt-4 text-sm">
                 <div className="flex justify-between">
                   <span className="text-on-variant">Your YES stake</span>
@@ -314,6 +314,12 @@ export default function MarketDetail() {
                   <span className="text-on-variant">Your NO stake</span>
                   <span className="text-error">{formatUsdc(position.no_amount, 3)} USDC</span>
                 </div>
+                {position.late_amount > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-on-variant">Deposit refund pending</span>
+                    <span className="text-outline">{formatUsdc(position.late_amount, 3)} USDC</span>
+                  </div>
+                )}
                 {isTerminal && baseClaimable === 0n && <div className="label-caps text-outline">No Base USDC claim available</div>}
               </div>
             )}
@@ -402,6 +408,7 @@ function plainPos(raw: unknown): Position {
     yes_amount: Number(obj?.yes_amount ?? 0),
     no_amount: Number(obj?.no_amount ?? 0),
     claimed: Boolean(obj?.claimed),
+    late_amount: Number(obj?.late_amount ?? 0),
   };
 }
 
