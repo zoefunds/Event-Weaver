@@ -1,5 +1,10 @@
 # Review: Confirmed-Payment Staking & Crash Recovery
 
+> **Note (2026-10-09):** the addresses and `eventweaver-api-prod.fly.dev` backend referenced
+> below are a point-in-time record and have since been superseded (new GenLayer contract, new
+> escrow, new backend app). See [MEMORY.md](MEMORY.md#deployed-state-live) for what's actually
+> live now.
+
 ## Request
 
 > Before we can accept this update, please make sure a user's recorded stake is backed

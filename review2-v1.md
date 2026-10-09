@@ -1,5 +1,10 @@
 # Review: Late-Arriving Confirmed Deposits Left Uncredited Forever
 
+> **Note (2026-10-09):** the addresses, `eventweaver-api-prod` app name, and deploy commands
+> below are a point-in-time record and have since been superseded (new GenLayer contract, new
+> escrow, new backend app `eventweaver-api-v2`). See [MEMORY.md](MEMORY.md#deployed-state-live)
+> for what's actually live now.
+
 ## Request
 
 > The requested payment-failure recovery is still incomplete: a confirmed

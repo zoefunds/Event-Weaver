@@ -1,5 +1,12 @@
 # Milestone 3: Late-arriving confirmed-deposit recovery, implemented and verified live
 
+> **Note (2026-10-09):** this document is a point-in-time submission record. The contract and
+> backend it describes as newly redeployed are accurate as of this writing, but the Base Sepolia
+> escrow (`0x83D73b3217314aF32D833e18d90356299835d0a5`, implied by the unchanged relayer/escrow
+> wiring below) was later replaced too, and the backend has since migrated off
+> `eventweaver-api-prod.fly.dev`. See [MEMORY.md](MEMORY.md#deployed-state-live) for current
+> addresses; do not use the ones below for anything but historical reference.
+
 Prior rejection and what changed since:
 
 1. A confirmed deposit could reach record_stake after the deadline and remain uncredited
