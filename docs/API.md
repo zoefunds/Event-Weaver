@@ -1,6 +1,6 @@
 # EventWeaver Backend API
 
-Base URL: `https://eventweaver-api-prod.fly.dev` (production) or `http://localhost:8080`.
+Base URL: `https://eventweaver-api-v2.fly.dev` (production) or `http://localhost:8080`.
 
 | Method | Path | Description |
 | --- | --- | --- |

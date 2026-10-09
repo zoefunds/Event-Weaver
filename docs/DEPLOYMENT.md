@@ -25,17 +25,17 @@ any comment touching it corrupts the runner header and yields
 
 ```bash
 cd backend
-fly launch --no-deploy --copy-config --name eventweaver-api-prod
-fly postgres create --name eventweaver-db-new --region iad
-fly postgres attach eventweaver-db-new --app eventweaver-api-prod   # sets DATABASE_URL
+fly launch --no-deploy --copy-config --name eventweaver-api-v2
+fly postgres create --name eventweaver-api-v2-db --region iad
+fly postgres attach eventweaver-api-v2-db --app eventweaver-api-v2   # sets DATABASE_URL
 fly secrets set CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
-  BASE_ESCROW_ADDRESS=0x83D73b3217314aF32D833e18d90356299835d0a5 \
+  BASE_ESCROW_ADDRESS=0x72fDf49A27F711a21C4C8177a763470B0128e6a9 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
   POLL_INTERVAL_MS=300000 \
   RESOLVER_INTERVAL_MS=300000 \
   CORS_ORIGINS=https://eventweaver-orpin.vercel.app
 fly deploy
-curl https://eventweaver-api-prod.fly.dev/health
+curl https://eventweaver-api-v2.fly.dev/health
 ```
 
 `fly.toml` enforces the never-die posture: `auto_stop_machines="off"`,
@@ -47,9 +47,9 @@ resolver, and settlement relay poll every five minutes to stay below the shared 
 ```bash
 cd frontend
 vercel --prod \
-  -e VITE_API_URL=https://eventweaver-api-prod.fly.dev \
+  -e VITE_API_URL=https://eventweaver-api-v2.fly.dev \
   -e VITE_CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
-  -e VITE_BASE_ESCROW_ADDRESS=0x83D73b3217314aF32D833e18d90356299835d0a5 \
+  -e VITE_BASE_ESCROW_ADDRESS=0x72fDf49A27F711a21C4C8177a763470B0128e6a9 \
   -e VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```
 
@@ -61,3 +61,22 @@ SPA rewrites are configured in `vercel.json`. Vercel Analytics is wired via
 Set the matching GenLayer address in `CONTRACT_ADDRESS` (Fly) and
 `VITE_CONTRACT_ADDRESS` (Vercel), then set the Base escrow variables shown above and redeploy
 both. The relayer key belongs only in Fly secrets, never in the frontend.
+
+**Deploy a new escrow alongside a new GenLayer contract — never reuse the old one.**
+`EventWeaverEscrow` tracks pools by a plain `marketId` integer with no knowledge of which
+GenLayer contract deployment that id came from. Since GenLayer contract market ids always
+start at 0, pointing a new contract at an existing escrow will collide with whatever that
+escrow already recorded for the same ids — `stake()` reverts outright for an id the old
+contract already settled, and silently mixes deposits for an id the old contract used but
+never settled. Deploy a fresh escrow with the same constructor shape (`usdc`, `relayer`) for
+every new contract address:
+
+```bash
+forge create contracts/base/EventWeaverEscrow.sol:EventWeaverEscrow \
+  --rpc-url https://sepolia.base.org \
+  --private-key <relayer-key> \
+  --broadcast \
+  --constructor-args <usdc-address> <relayer-address>
+```
+
+Verify `pools(0)` on the new address is `(0, 0, false)` before wiring it in.

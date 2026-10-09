@@ -6,7 +6,7 @@
 
 *Trustless causal-chain adjudication powered by GenLayer Intelligent Contracts.*
 
-[**Live App**](https://eventweaver-orpin.vercel.app) · [**API**](https://eventweaver-api-prod.fly.dev/health) · [**Contract on StudioNet**](#deployed-addresses) · [**Docs**](docs/)
+[**Live App**](https://eventweaver-orpin.vercel.app) · [**API**](https://eventweaver-api-v2.fly.dev/health) · [**Contract on StudioNet**](#deployed-addresses) · [**Docs**](docs/)
 
 ![Landing page](docs/images/landing.png)
 
@@ -368,20 +368,31 @@ the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x0551246DcB7de220474b5a479820AA18F1DDAB5C` (GenLayer StudioNet, V1 USDC ledger, relayer-gated staking) |
+| Intelligent Contract | `0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6` (GenLayer StudioNet, redeployed with the late-stake-crediting fix from [a0b3e8f](https://github.com/zoefunds/Event-Weaver/commit/a0b3e8f)) |
 | Base Sepolia USDC escrow | [`0x72fDf49A27F711a21C4C8177a763470B0128e6a9`](https://sepolia.basescan.org/address/0x72fDf49A27F711a21C4C8177a763470B0128e6a9) (side-carrying `stake(marketId, side, amount)`) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Backend API | https://eventweaver-api-prod.fly.dev (Fly app `eventweaver-api-prod` + Postgres `eventweaver-db-new`, org `priscilla-george`, region `iad`) |
+| Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |
 
-> The backend and database were migrated to the `priscilla-george` Fly.io organization. The
-> legacy database was deleted. The indexer prunes rows outside the active contract's id range,
-> preventing retired markets from appearing as stakeable.
+> The backend and database were migrated off the old `eventweaver-api-prod` deployment to a new
+> Fly account/app (`eventweaver-api-v2`) with its own Postgres. The indexer prunes rows outside
+> the active contract's id range, preventing retired markets from appearing as stakeable.
 >
-> The Intelligent Contract and escrow above are a fresh V1.1 pair (relayer-gated
-> `record_stake`, side-carrying escrow deposits) — not backward-compatible with the earlier
-> V1 addresses, whose `stake_yes`/`stake_no` accepted an unverified client-supplied amount.
-> See [review-v1.md](review-v1.md) for why they were replaced.
+> The Intelligent Contract above is a fresh redeploy, not an upgrade of the earlier
+> `0x0551246DcB7de220474b5a479820AA18F1DDAB5C` address — GenLayer contracts are immutable, so
+> shipping the late-stake-crediting fix required a new contract instance. That means market ids
+> reset to 0 and **do not carry over**: markets on `0x0551246D...` must be recreated against this
+> address if you want them live again.
+>
+> The Base Sepolia escrow above is likewise a fresh deployment, not the original
+> `0x83D73b3217314aF32D833e18d90356299835d0a5`. That escrow tracks pools by a plain `marketId`
+> integer with no awareness of which GenLayer contract it belongs to — reusing it with the new
+> contract's market ids would have collided with the old deployment's already-settled pools
+> (and, for not-yet-settled ones, silently mixed funds across two unrelated markets). A new
+> escrow avoids that entirely; it shares the same relayer EOA as before.
+>
+> See [review-v1.md](review-v1.md) for why the V1.1 contract/escrow pair before this one was
+> introduced, and why `stake_yes`/`stake_no` were replaced with relayer-gated `record_stake`.
 
 ## Authenticated clock design
 

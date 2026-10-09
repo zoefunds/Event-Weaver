@@ -14,8 +14,8 @@ through an external escrow while GenLayer stores positions and computes final al
 
 ## Architecture decisions (confirmed by owner)
 - **Adjudication policy**: staking open to all until deadline; pre-deadline step checks restricted to market creator/platform owner; post-deadline adjudication permissionless AND auto-triggered by the backend resolver (`backend/src/resolver.js`, RESOLVER_PRIVATE_KEY optional).
-- **Contract**: single Intelligent Contract `contracts/event_weaver.py`, deployed to **StudioNet** at `0x0551246DcB7de220474b5a479820AA18F1DDAB5C`. It is the V1 market and allocation ledger.
-- **USDC custody**: `contracts/base/EventWeaverEscrow.sol` is deployed on Base Sepolia at `0x83D73b3217314aF32D833e18d90356299835d0a5` and uses test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **Contract**: single Intelligent Contract `contracts/event_weaver.py`, deployed to **StudioNet** at `0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6` (redeployed with the late-stake-crediting fix, `a0b3e8f` — supersedes the earlier `0x0551246DcB7de220474b5a479820AA18F1DDAB5C`, which still has the bug and is no longer used). It is the V1 market and allocation ledger.
+- **USDC custody**: `contracts/base/EventWeaverEscrow.sol` is deployed on Base Sepolia at `0x72fDf49A27F711a21C4C8177a763470B0128e6a9` (redeployed alongside the new GenLayer contract — see gotcha below; supersedes `0x83D73b3217314aF32D833e18d90356299835d0a5`) and uses test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 - **Constructor args**: `min_creation_bond=0`, `min_stake=0` for StudioNet.
 - **Backend**: Node/Express indexer + API on **Fly.io**, 24/7 (`auto_stop_machines=off`, `min_machines_running=1`, restart policy). Database: **Fly Postgres**.
 - **Frontend**: **Vite + React + Tailwind**, deployed to **Vercel**, with Vercel Analytics.
@@ -41,14 +41,17 @@ through an external escrow while GenLayer stores positions and computes final al
 - StudioNet has no `gen_dbg_traceTransaction`; debug via `genlayer receipt <tx> --stdout --stderr`.
 - genvm-lint validate is broken when both SDK libs are on sys.path (imports old `genlayer` first). Validate schema manually against lib `11rhn002…`.
 - Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. Never `strict_eq` for web/LLM output.
+- **A Base Sepolia escrow must never be reused across GenLayer contract redeployments.** `EventWeaverEscrow.pools` is keyed by a plain `marketId` integer with zero awareness of which GenLayer contract address that id belongs to. GenLayer market ids always restart at 0 for a fresh contract, so pointing a new contract at an old escrow collides with whatever that escrow already has for the same ids: `stake()` reverts outright (`!pools[marketId].settled`) for an id the old deployment already settled, and for an id the old deployment used but never settled, a new stake silently merges into that stale pool — risking the old relayer's `settle()` later sweeping a new staker's deposit into an old payout. Root-caused 2026-10-09 when a fresh contract redeploy (`0x764481...`, replacing the buggy `0x0551246D...`) reused the original escrow and market 0 reverted ("invalid stake") because the old contract's market 0 was already settled there. **Always deploy a fresh `EventWeaverEscrow` (same `usdc`/`relayer` constructor args) alongside any new GenLayer contract, and verify `pools(0)` reads `(0, 0, false)` before wiring it in.**
+- **GenLayer contracts are immutable — "fixing a bug" means a brand-new address with 0 markets, not an upgrade.** `MILESTONE-3.md` documents a late-stake-crediting fix (`a0b3e8f`) shipped by redeploying the whole contract. The docs (README, this file) and the running backend/frontend env vars can silently drift out of sync after a redeploy like that — the symptom is literally "markets I created aren't showing up," because the old contract (with the markets) and the new one (empty, but what the code defaults to or vice versa) disagree. When markets go missing, check `GET /health`'s `contract` field and `get_market_count` on-chain for that exact address before assuming an indexing/filtering bug.
 
 ## Deployed state (live)
-- **GenLayer V1 contract**: `0x0551246DcB7de220474b5a479820AA18F1DDAB5C`.
-- **Base Sepolia escrow**: `0x83D73b3217314aF32D833e18d90356299835d0a5`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
-- **Backend**: https://eventweaver-api-prod.fly.dev (Fly app `eventweaver-api-prod` + Postgres `eventweaver-db-new`, `priscilla-george` organization). Secrets include `CONTRACT_ADDRESS`, `DATABASE_URL`, Base escrow configuration, and the server-only relayer key.
+- **GenLayer V1 contract**: `0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6`.
+- **Base Sepolia escrow**: `0x72fDf49A27F711a21C4C8177a763470B0128e6a9`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **Backend**: https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, `personal` organization — migrated off the old `eventweaver-api-prod` deployment, which had billing issues and is left running but no longer wired to the frontend). Secrets include `CONTRACT_ADDRESS`, `DATABASE_URL`, Base escrow configuration, and the server-only relayer key.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`, `VITE_BASE_ESCROW_ADDRESS`, `VITE_BASE_SEPOLIA_USDC`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).
-- If the owner deploys a new GenLayer contract or Base escrow: update the matching Fly secrets and Vercel environment variables, then redeploy both. Never add the relayer key to Vercel.
+- If the owner deploys a new GenLayer contract: deploy a new Base escrow too (see gotcha above), then update the matching Fly secrets and Vercel environment variables, and redeploy both. Never add the relayer key to Vercel.
+- The public market feed (`/api/markets`) no longer filters anything out — no hidden-id list, no status exclusion, no low pagination cap. If a market is missing, it's a contract-address mismatch or an indexer lag, not a filter.
 - StudioNet quirks: `sim_fundAccount` RPC funds test accounts (wei units); other Studio users can and do interact with public contracts (expect foreign stakes/checks); `latest-nonfinal` reads can lag writes by ~15–30s.
 
 ## Review-team constraints (rewards)
