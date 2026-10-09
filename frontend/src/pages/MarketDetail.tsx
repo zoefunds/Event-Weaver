@@ -66,7 +66,7 @@ export default function MarketDetail() {
           const [pos, portfolio] = await Promise.all([
             readClient.readContract({
             address: (import.meta.env.VITE_CONTRACT_ADDRESS ??
-              '0x0551246DcB7de220474b5a479820AA18F1DDAB5C') as `0x${string}`,
+              '0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6') as `0x${string}`,
             functionName: 'get_position',
             args: [marketId, address],
             }),

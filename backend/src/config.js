@@ -4,7 +4,7 @@ import 'dotenv/config';
 export const config = {
   port: parseInt(process.env.PORT ?? '8080', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x0551246DcB7de220474b5a479820AA18F1DDAB5C',
+  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6',
   // StudioNet's shared RPC is capped at 500 reads/hour. Five minutes keeps
   // indexing, resolution, and settlement well below that budget.
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS ?? '300000', 10),
