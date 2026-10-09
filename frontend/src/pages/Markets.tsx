@@ -21,7 +21,7 @@ export default function Markets() {
   useEffect(() => {
     setMarkets(null);
     api
-      .markets({ limit: 100 })
+      .markets({ limit: 1000 })
       .then(setMarkets)
       .catch((e) => setError(e.message));
   }, []);

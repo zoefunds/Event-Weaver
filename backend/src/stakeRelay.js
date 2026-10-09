@@ -39,7 +39,7 @@ const ESCROW_ABI = [
   'event Staked(uint256 indexed marketId, address indexed staker, uint8 side, uint256 amount)',
 ];
 const LAST_BLOCK_KEY = 'stakeRelay:lastScannedBlock';
-const MAX_BLOCK_RANGE = 2000; // stay well under typical RPC log-range caps
+const MAX_BLOCK_RANGE = 190; // sepolia.base.org caps eth_getLogs at a 200-block range
 
 /** Exposed via GET /health so a stuck relay (bad RPC, drained relayer
  * wallet, wrong contract address) is visible the same way indexer/resolver

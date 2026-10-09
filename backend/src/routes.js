@@ -41,21 +41,13 @@ router.get('/health', asyncRoute(async (_req, res) => {
   });
 }));
 
-/** Market ids excluded from the public feed (legacy/demo), via env. */
-const HIDDEN_IDS = new Set(
-  (process.env.HIDE_MARKET_IDS ?? '')
-    .split(',')
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => !Number.isNaN(n))
-);
-
-/** Indexed market list with filters (fast, serves the discovery page). */
+/** Indexed market list with filters (fast, serves the discovery page). No market is ever excluded. */
 router.get('/api/markets', asyncRoute(async (req, res) => {
   const { status, category } = req.query;
-  const limit = Math.min(parseInt(req.query.limit ?? '50', 10) || 50, 100);
+  const limit = Math.min(parseInt(req.query.limit ?? '500', 10) || 500, 1000);
   const offset = Math.max(parseInt(req.query.offset ?? '0', 10) || 0, 0);
   const rows = await listMarkets({ status, category, limit, offset });
-  res.json(rows.filter((m) => !HIDDEN_IDS.has(m.id) && m.status !== 'CANCELLED'));
+  res.json(rows);
 }));
 
 /** Single market — indexed copy first, live chain fallback. */
