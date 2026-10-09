@@ -14,7 +14,7 @@ export const config = {
   baseSepolia: {
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
     usdcAddress: process.env.BASE_SEPOLIA_USDC ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0x83D73b3217314aF32D833e18d90356299835d0a5',
+    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0x72fDf49A27F711a21C4C8177a763470B0128e6a9',
     // Same key signs both halves of the stake relay: it is the escrow's
     // trusted `relayer` (settle()) and, via createAccount(), the GenLayer
     // contract's trusted `relayer` (record_stake()) — one operational
