@@ -59,7 +59,7 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0x72fDf49A27F711a21C4C8177a763470B0128e6a9`](https://sepolia.basescan.org/address/0x72fDf49A27F711a21C4C8177a763470B0128e6a9)
+[`0x92078A23863aE5D79594B3F517B44F295cc494a6`](https://sepolia.basescan.org/address/0x92078A23863aE5D79594B3F517B44F295cc494a6)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
 A stake is only ever recorded off the back of a confirmed on-chain payment — never a
@@ -307,7 +307,7 @@ Environment (see `.env.example` in each package):
 | --- | --- | --- |
 | backend | `CONTRACT_ADDRESS` | EventWeaver contract on StudioNet |
 | backend | `DATABASE_URL` | Postgres (optional locally) |
-| backend | `BASE_ESCROW_ADDRESS`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY` | Base Sepolia escrow + the trusted relayer key that signs both `settle()` (escrow) and `record_stake()` (GenLayer) — must be the escrow's `relayer` and the GenLayer contract's `relayer` |
+| backend | `BASE_ESCROW_ADDRESS`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY`, `SETTLEMENT_AUTHORITY_PRIVATE_KEY` | Escrow, transaction relayer, and a separate authority that signs canonical GenLayer payout commitments |
 | backend | `BASE_SEPOLIA_STAKE_CONFIRMATIONS` | blocks to wait before treating a deposit as final (default 5) |
 | backend | `POLL_INTERVAL_MS`, `RESOLVER_INTERVAL_MS` | rate-safe ops tuning |
 | frontend | `VITE_API_URL` | backend base URL |
@@ -368,8 +368,8 @@ the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6` (GenLayer StudioNet, redeployed with the late-stake-crediting fix from [a0b3e8f](https://github.com/zoefunds/Event-Weaver/commit/a0b3e8f)) |
-| Base Sepolia USDC escrow | [`0x72fDf49A27F711a21C4C8177a763470B0128e6a9`](https://sepolia.basescan.org/address/0x72fDf49A27F711a21C4C8177a763470B0128e6a9) (side-carrying `stake(marketId, side, amount)`) |
+| Intelligent Contract | `0x2810D77Eb436054d843431A76f5F7883Bc8E6927` (GenLayer StudioNet; financial-remediation source commit `6d7c0fc`) |
+| Base Sepolia USDC escrow | [`0x92078A23863aE5D79594B3F517B44F295cc494a6`](https://sepolia.basescan.org/address/0x92078A23863aE5D79594B3F517B44F295cc494a6) (authority-bound settlement and late-refund reserve) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |

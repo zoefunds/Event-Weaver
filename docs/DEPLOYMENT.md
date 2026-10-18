@@ -28,9 +28,10 @@ cd backend
 fly launch --no-deploy --copy-config --name eventweaver-api-v2
 fly postgres create --name eventweaver-api-v2-db --region iad
 fly postgres attach eventweaver-api-v2-db --app eventweaver-api-v2   # sets DATABASE_URL
-fly secrets set CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
-  BASE_ESCROW_ADDRESS=0x72fDf49A27F711a21C4C8177a763470B0128e6a9 \
+fly secrets set CONTRACT_ADDRESS=0x2810D77Eb436054d843431A76f5F7883Bc8E6927 \
+  BASE_ESCROW_ADDRESS=0x92078A23863aE5D79594B3F517B44F295cc494a6 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
+  SETTLEMENT_AUTHORITY_PRIVATE_KEY=<separate-authority-key> \
   POLL_INTERVAL_MS=300000 \
   RESOLVER_INTERVAL_MS=300000 \
   CORS_ORIGINS=https://eventweaver-orpin.vercel.app
@@ -48,8 +49,8 @@ resolver, and settlement relay poll every five minutes to stay below the shared 
 cd frontend
 vercel --prod \
   -e VITE_API_URL=https://eventweaver-api-v2.fly.dev \
-  -e VITE_CONTRACT_ADDRESS=0x764481a6D14eE61Dad5Ec0B8249f9Eec0F4Ad0d6 \
-  -e VITE_BASE_ESCROW_ADDRESS=0x72fDf49A27F711a21C4C8177a763470B0128e6a9 \
+  -e VITE_CONTRACT_ADDRESS=0x2810D77Eb436054d843431A76f5F7883Bc8E6927 \
+  -e VITE_BASE_ESCROW_ADDRESS=0x92078A23863aE5D79594B3F517B44F295cc494a6 \
   -e VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```
 
@@ -68,7 +69,7 @@ GenLayer contract deployment that id came from. Since GenLayer contract market i
 start at 0, pointing a new contract at an existing escrow will collide with whatever that
 escrow already recorded for the same ids — `stake()` reverts outright for an id the old
 contract already settled, and silently mixes deposits for an id the old contract used but
-never settled. Deploy a fresh escrow with the same constructor shape (`usdc`, `relayer`) for
+never settled. Deploy a fresh escrow with (`usdc`, `relayer`, `settlementAuthority`) for
 every new contract address:
 
 ```bash
@@ -76,7 +77,7 @@ forge create contracts/base/EventWeaverEscrow.sol:EventWeaverEscrow \
   --rpc-url https://sepolia.base.org \
   --private-key <relayer-key> \
   --broadcast \
-  --constructor-args <usdc-address> <relayer-address>
+  --constructor-args <usdc-address> <relayer-address> <settlement-authority-address>
 ```
 
 Verify `pools(0)` on the new address is `(0, 0, false)` before wiring it in.
