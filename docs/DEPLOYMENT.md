@@ -31,8 +31,8 @@ logs, pending liabilities, recipients and amounts before returning a signature.
 cd authority
 fly deploy -a eventweaver-settlement-authority
 fly secrets set -a eventweaver-settlement-authority \
-  GENLAYER_CONTRACT_ADDRESS=0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3 \
-  BASE_ESCROW_ADDRESS=0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD \
+  GENLAYER_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
+  BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
   SETTLEMENT_AUTHORITY_PRIVATE_KEY=<authority-only-key> \
   AUTHORITY_API_TOKEN=<shared-api-token>
 ```
@@ -46,10 +46,10 @@ cd backend
 fly launch --no-deploy --copy-config --name eventweaver-api-v2
 fly postgres create --name eventweaver-api-v2-db --region iad
 fly postgres attach eventweaver-api-v2-db --app eventweaver-api-v2   # sets DATABASE_URL
-fly secrets set CONTRACT_ADDRESS=0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3 \
-  GENLAYER_CONTRACT_ADDRESS=0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3 \
-  BASE_ESCROW_ADDRESS=0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD \
-  BASE_ESCROW_DEPLOYMENT_BLOCK=48278617 \
+fly secrets set CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
+  GENLAYER_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
+  BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
+  BASE_ESCROW_DEPLOYMENT_BLOCK=48280044 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
   SETTLEMENT_SIGNER_URL=http://eventweaver-settlement-authority.internal:8080 \
   SETTLEMENT_SIGNER_TOKEN=<shared-api-token> \
@@ -70,8 +70,8 @@ resolver, and settlement relay poll every five minutes to stay below the shared 
 cd frontend
 vercel --prod \
   -e VITE_API_URL=https://eventweaver-api-v2.fly.dev \
-  -e VITE_CONTRACT_ADDRESS=0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3 \
-  -e VITE_BASE_ESCROW_ADDRESS=0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD \
+  -e VITE_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
+  -e VITE_BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
   -e VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```
 

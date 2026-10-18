@@ -14,8 +14,8 @@ through an external escrow while GenLayer stores positions and computes final al
 
 ## Architecture decisions (confirmed by owner)
 - **Adjudication policy**: staking open to all until deadline; pre-deadline step checks restricted to market creator/platform owner; post-deadline adjudication permissionless AND auto-triggered by the backend resolver (`backend/src/resolver.js`, RESOLVER_PRIVATE_KEY optional).
-- **Contract**: `contracts/event_weaver.py`, deployed to StudioNet at `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`.
-- **USDC custody**: `contracts/base/EventWeaverEscrow.sol`, deployed on Base Sepolia at `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`, using test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **Contract**: `contracts/event_weaver.py`, deployed to StudioNet at `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f`.
+- **USDC custody**: `contracts/base/EventWeaverEscrow.sol`, deployed on Base Sepolia at `0xd1c6864eCE3f06B1a18932905ab816635726040c`, using test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 - **Constructor args**: `min_creation_bond=0`, `min_stake=0` for StudioNet.
 - **Backend**: Node/Express indexer + API on **Fly.io**, 24/7 (`auto_stop_machines=off`, `min_machines_running=1`, restart policy). Database: **Fly Postgres**.
 - **Frontend**: **Vite + React + Tailwind**, deployed to **Vercel**, with Vercel Analytics.
@@ -48,8 +48,8 @@ through an external escrow while GenLayer stores positions and computes final al
 - **GenLayer contracts are immutable.** A fix means a new contract, new matched escrow, and synchronized Fly/Vercel configuration. When markets appear missing, compare `/health`, `/api/config`, the frontend bundle and on-chain `get_market_count` for the exact canonical address.
 
 ## Deployed state (live)
-- **GenLayer V1 contract**: `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`.
-- **Base Sepolia escrow**: `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **GenLayer V1 contract**: `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f`.
+- **Base Sepolia escrow**: `0xd1c6864eCE3f06B1a18932905ab816635726040c`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 - **Backend**: https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`). Its secrets include contract/escrow configuration, the transaction-only relayer key, and an authenticated private URL/token for the authority service. The authority signing key exists only in the separate `eventweaver-settlement-authority` Fly app.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`, `VITE_BASE_ESCROW_ADDRESS`, `VITE_BASE_SEPOLIA_USDC`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).

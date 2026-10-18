@@ -59,7 +59,7 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD)
+[`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
 A stake is only ever recorded off the back of a confirmed on-chain payment — never a
