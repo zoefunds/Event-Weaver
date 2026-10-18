@@ -121,6 +121,32 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
   [`0xe42341f91090d292ce89d260216740582c742ca65901033b98e7ca94b7df5bc5`](https://sepolia.basescan.org/tx/0xe42341f91090d292ce89d260216740582c742ca65901033b98e7ca94b7df5bc5):
   claimable is now zero and the wallet returned from `121092500` to `121192500` units.
 
+## Fresh normal validator-adjudicated settlement
+
+Market 3 proves the complete normal financial lifecycle on the same immutable pair, with
+pre-resolution stakes and the losing pool distributed after a consensus verdict.
+
+1. GenLayer creation: `0x6d3efa9c89027ef46a393a56234df660caa809d4903349826314855d2728658a`.
+2. Authority-authorized Base registration:
+   [`0x454f3f38d037afc437f0178c206d35d0012580e60df243b7e7124aba4806b3a6`](https://sepolia.basescan.org/tx/0x454f3f38d037afc437f0178c206d35d0012580e60df243b7e7124aba4806b3a6).
+3. Pre-resolution YES 0.100000-USDC deposit:
+   [`0xe0fe535688667f7d03a97e7431e72a2038218aacc995c4f5b773cd8cf8825886`](https://sepolia.basescan.org/tx/0xe0fe535688667f7d03a97e7431e72a2038218aacc995c4f5b773cd8cf8825886)
+   at log `210`; NO 0.200000-USDC deposit:
+   [`0x22276c91f7de34b8b449afb7918588e049c4092ff531a7e70719d7593ce0ded9`](https://sepolia.basescan.org/tx/0x22276c91f7de34b8b449afb7918588e049c4092ff531a7e70719d7593ce0ded9)
+   at log `6`. The event-specific relay applied both positions and acknowledged both Base
+   liabilities; the escrow state before resolution was `deposited=300000, pending=0`.
+4. Finalized GenVM `MAJORITY_AGREE` YES resolution:
+   `0x457296227ab3370c556fccc7407c70691bcf23e7880f1c1602c01aa3087be173`.
+   The backend accepted this exact receipt through `/finalization-proof`; it cannot use an
+   earlier non-terminal adjudication receipt.
+5. Independent authority settlement:
+   [`0x9d3589581ae35f00524c846ff00cbb58f356c32b306281e9a5b0188a6ef3230e`](https://sepolia.basescan.org/tx/0x9d3589581ae35f00524c846ff00cbb58f356c32b306281e9a5b0188a6ef3230e),
+   allocating 297000 units (the 0.200000-USDC losing pool less the immutable 1.5% fee).
+6. Recipient withdrawal:
+   [`0x6614d5181bacde3fd774e28937682e00319f7de52a77cdc4544177341da5db55`](https://sepolia.basescan.org/tx/0x6614d5181bacde3fd774e28937682e00319f7de52a77cdc4544177341da5db55).
+   Test-USDC balance moved from `120892500` to `121189500` (+297000), claimable is zero,
+   and the escrow records `settled=true`.
+
 ## Reproducible verification
 
 The historical value-transfer evidence above remains retained for review. The active immutable
