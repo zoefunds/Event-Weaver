@@ -26,6 +26,7 @@ import { createClient as createGenlayerClient, createAccount } from 'genlayer-js
 import { studionet } from 'genlayer-js/chains';
 import { config } from './config.js';
 import { readContract, plain } from './genlayer.js';
+import { isBaseMarketSettled, relayLateRefund } from './baseSepolia.js';
 import {
   getSyncState,
   setSyncState,
@@ -90,6 +91,8 @@ export async function scanForDeposits(logger) {
   if (events.length) {
     const rows = events.map((ev) => ({
       baseTxHash: ev.transactionHash.toLowerCase(),
+      logIndex: Number(ev.index),
+      depositId: `${ev.transactionHash.toLowerCase()}:${Number(ev.index)}`,
       marketId: Number(ev.args.marketId),
       staker: ev.args.staker,
       side: Number(ev.args.side),
@@ -112,17 +115,19 @@ export async function applyPendingStakes(logger) {
   const rows = await listUnappliedStakes(25);
   for (const row of rows) {
     try {
-      const alreadyApplied = await readContract('is_stake_applied', [row.base_tx_hash]);
+      const alreadyApplied = await readContract('is_stake_applied', [row.deposit_id]);
       if (alreadyApplied) {
         // GenLayer already has it (e.g. a prior attempt's receipt wait timed
         // out after the write actually landed) — reconcile without retrying.
-        await markStakeApplied(row.base_tx_hash, null);
+        const isLate = await readContract('is_stake_late', [row.deposit_id]);
+        if (isLate && await isBaseMarketSettled(Number(row.market_id))) await relayLateRefund(row, logger);
+        await markStakeApplied(row.deposit_id, null);
         continue;
       }
       const hash = await client.writeContract({
         address: config.contractAddress,
         functionName: 'record_stake',
-        args: [Number(row.market_id), row.staker, Number(row.side), Number(row.amount), row.base_tx_hash],
+        args: [Number(row.market_id), row.staker, Number(row.side), Number(row.amount), row.deposit_id],
         value: 0n,
       });
       await client.waitForTransactionReceipt({
@@ -131,14 +136,16 @@ export async function applyPendingStakes(logger) {
         interval: 3000,
         retries: 60,
       });
-      await markStakeApplied(row.base_tx_hash, hash);
+      const isLate = await readContract('is_stake_late', [row.deposit_id]);
+      if (isLate && await isBaseMarketSettled(Number(row.market_id))) await relayLateRefund(row, logger);
+      await markStakeApplied(row.deposit_id, hash);
       stakeRelayState.applied += 1;
       stakeRelayState.lastApplyError = null;
-      logger.info({ baseTxHash: row.base_tx_hash, marketId: row.market_id }, 'stake applied to GenLayer');
+      logger.info({ depositId: row.deposit_id, marketId: row.market_id }, 'stake applied to GenLayer');
     } catch (err) {
-      await markStakeFailed(row.base_tx_hash, err.message);
+      await markStakeFailed(row.deposit_id, err.message);
       stakeRelayState.lastApplyError = err.message;
-      logger.error({ err: err.message, baseTxHash: row.base_tx_hash }, 'stake apply failed; will retry');
+      logger.error({ err: err.message, depositId: row.deposit_id }, 'stake apply failed; will retry');
     }
   }
 }

@@ -109,6 +109,7 @@ class ChainStep:
     reasoning: str            # persisted transparent reasoning (truncated)
     evidence_summary: str     # short summary of what evidence supported the verdict
     checked_at_ts: u64        # unix ts (caller-supplied clock) of last check
+    occurred_at_ts: u64       # evidence-backed real-world event time (0 if unknown)
     check_count: u32          # how many adjudication passes touched this step
 
 
@@ -134,6 +135,8 @@ class Market:
     stake_count: u32            # number of stake actions (activity metric)
     steps_fulfilled: u32        # cached count of FULFILLED steps
     steps_failed: u32           # cached count of FAILED steps
+    protocol_fee_bps: u32       # immutable fee snapshot taken at creation
+    creator_fee_bps: u32        # immutable fee snapshot taken at creation
 
 
 @allow_storage
@@ -308,6 +311,12 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
     evidence_raw = _first_present(payload, ["evidence_summary", "evidence", "sources_summary"])
     evidence_summary = str(evidence_raw) if evidence_raw is not None else ""
 
+    occurred_at_raw = _first_present(payload, ["occurred_at_ts", "event_ts", "event_time"])
+    try:
+        occurred_at_ts = max(0, int(occurred_at_raw or 0))
+    except (ValueError, TypeError):
+        occurred_at_ts = 0
+
     if occurred is None:
         # Unclear verdict — treat as low-confidence "not yet", never crash.
         occurred = False
@@ -318,6 +327,7 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
         "occurred": occurred,
         "can_still_occur": can_still,
         "confidence": confidence,
+        "occurred_at_ts": occurred_at_ts,
         "reasoning": reasoning,
         "evidence_summary": evidence_summary,
     }
@@ -366,6 +376,7 @@ class EventWeaver(gl.Contract):
     # keyed lowercase. Makes record_stake idempotent: replaying a hash (a
     # relayer retry, or two relayer instances racing) can never double-credit.
     applied_base_tx: TreeMap[str, bool]
+    late_base_deposit: TreeMap[str, bool]
 
     # ---- platform metrics ---------------------------------------------------
     total_volume: u256
@@ -513,6 +524,7 @@ class EventWeaver(gl.Contract):
             "reasoning": step.reasoning,
             "evidence_summary": step.evidence_summary,
             "checked_at_ts": int(step.checked_at_ts),
+            "occurred_at_ts": int(step.occurred_at_ts),
             "check_count": int(step.check_count),
         }
 
@@ -542,6 +554,8 @@ class EventWeaver(gl.Contract):
             "stake_count": int(market.stake_count),
             "steps_fulfilled": int(market.steps_fulfilled),
             "steps_failed": int(market.steps_failed),
+            "protocol_fee_bps": int(market.protocol_fee_bps),
+            "creator_fee_bps": int(market.creator_fee_bps),
             "step_count": len(self.market_steps[u32(int(market.id))]) if self.market_steps.get(u32(int(market.id))) is not None else 0,
         }
         if include_steps:
@@ -611,12 +625,14 @@ Respond with ONLY a JSON object, no markdown, with exactly these keys:
   "occurred": true or false — has the condition verifiably occurred?
   "can_still_occur": true or false — if it has not occurred, is it still possible before the deadline?
   "confidence": integer 0-100 — your confidence in the "occurred" answer,
+  "occurred_at_ts": unix timestamp of when it occurred, or 0 when not evidenced,
   "reasoning": one short paragraph explaining the verdict,
   "evidence_summary": one sentence naming which evidence supported the verdict
 }}
 
 Rules:
-- "occurred" must be true ONLY with concrete supporting evidence.
+- "occurred" must be true ONLY with concrete supporting evidence, including its event date/time.
+- In this ordered chain, its event time must be later than the prior fulfilled step's event time.
 - If evidence is missing or ambiguous, set occurred=false, can_still_occur=true, confidence below 50.
 - If the deadline has passed and it did not occur, set can_still_occur=false.
 - Keep reasoning under 120 words."""
@@ -661,6 +677,7 @@ Rules:
                     "occurred": verdict["occurred"],
                     "can_still_occur": verdict["can_still_occur"],
                     "confidence": verdict["confidence"],
+                    "occurred_at_ts": int(verdict.get("occurred_at_ts", 0)),
                     "reasoning": _truncate(verdict["reasoning"], 800),
                     "evidence_summary": _truncate(verdict["evidence_summary"], 300),
                 },
@@ -710,8 +727,26 @@ Rules:
         step.confidence = u8(_clamp_int(confidence, 0, 100))
         step.reasoning = _truncate(str(verdict["reasoning"]), MAX_REASONING_STORED)
         step.evidence_summary = _truncate(str(verdict["evidence_summary"]), 400)
+        step.occurred_at_ts = u64(max(0, int(verdict.get("occurred_at_ts", 0))))
         step.checked_at_ts = u64(max(0, now_ts))
         step.check_count = u32(int(step.check_count) + 1)
+
+    def _enforce_chronology(self, steps: DynArray[ChainStep], step_index: int, verdict: dict) -> dict:
+        """Reject an otherwise-positive event whose evidenced occurrence
+        time is not strictly after the preceding fulfilled event."""
+        if step_index <= 0 or not bool(verdict.get("occurred")):
+            return verdict
+        previous_ts = int(steps[step_index - 1].occurred_at_ts)
+        current_ts = int(verdict.get("occurred_at_ts", 0))
+        if previous_ts > 0 and current_ts > 0 and current_ts <= previous_ts:
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = False
+            verdict["confidence"] = 100
+            verdict["reasoning"] = (
+                f"Chronology violation: evidenced event time {current_ts} is not after "
+                f"the prior step's event time {previous_ts}."
+            )
+        return verdict
 
     def _maybe_finalize(self, market: Market, now_ts: int) -> None:
         """Flip a RESOLVING market to a terminal status when the chain is
@@ -757,7 +792,11 @@ Rules:
         else:
             return
 
-        protocol_fee = (losing_pool * int(self.protocol_fee_bps)) // BPS_DENOMINATOR
+        winning_pool = int(market.yes_pool) if status == STATUS_RESOLVED_YES else int(market.no_pool)
+        if winning_pool == 0:
+            market.fee_paid = True
+            return
+        protocol_fee = (losing_pool * int(market.protocol_fee_bps)) // BPS_DENOMINATOR
         self.accrued_protocol_fees = u256(int(self.accrued_protocol_fees) + protocol_fee)
         market.fee_paid = True
 
@@ -768,7 +807,9 @@ Rules:
             winning, losing = int(market.yes_pool), int(market.no_pool)
         else:
             winning, losing = int(market.no_pool), int(market.yes_pool)
-        total_fee_bps = int(self.protocol_fee_bps) + int(self.creator_fee_bps)
+        if winning == 0:
+            return 0, losing
+        total_fee_bps = int(market.protocol_fee_bps) + int(market.creator_fee_bps)
         distributable = losing - (losing * total_fee_bps) // BPS_DENOMINATOR
         return winning, max(0, distributable)
 
@@ -865,6 +906,8 @@ Rules:
             stake_count=u32(0),
             steps_fulfilled=u32(0),
             steps_failed=u32(0),
+            protocol_fee_bps=u32(int(self.protocol_fee_bps)),
+            creator_fee_bps=u32(int(self.creator_fee_bps)),
         )
 
         self.market_steps[mid] = []
@@ -879,6 +922,7 @@ Rules:
                     reasoning="",
                     evidence_summary="",
                     checked_at_ts=u64(0),
+                    occurred_at_ts=u64(0),
                     check_count=u32(0),
                 )
             )
@@ -952,7 +996,7 @@ Rules:
         )
 
     @gl.public.write
-    def record_stake(self, market_id: int, staker: str, side: int, amount: int, base_tx_hash: str) -> None:
+    def record_stake(self, market_id: int, staker: str, side: int, amount: int, deposit_id: str) -> None:
         """Relayer-only: record `staker`'s USDC stake after the relayer has
         independently confirmed a matching deposit finalized in
         EventWeaverEscrow on Base Sepolia.
@@ -963,8 +1007,8 @@ Rules:
         directly against the escrow contract rather than through the
         website.
 
-        base_tx_hash is the escrow deposit's transaction hash and makes this
-        call idempotent: replaying the same hash (e.g. the relayer retrying
+        deposit_id is "<Base transaction hash>:<log index>" and makes this
+        call idempotent: replaying the same event (e.g. the relayer retrying
         after it crashed between confirming the deposit and recording the
         stake) is a safe no-op instead of a double-credit.
 
@@ -981,20 +1025,26 @@ Rules:
         """
         self._only_relayer()
         _require(side in (SIDE_YES, SIDE_NO), "side must be YES (1) or NO (2)")
-        tx_key = base_tx_hash.strip().lower()
-        _require(bool(tx_key), "base_tx_hash is required")
+        tx_key = deposit_id.strip().lower()
+        parts = tx_key.split(":")
+        _require(
+            len(parts) == 2 and len(parts[0]) == 66 and parts[0].startswith("0x") and parts[1].isdigit(),
+            "deposit_id must be tx_hash:log_index",
+        )
         if self.applied_base_tx.get(tx_key):
             return
         self.applied_base_tx[tx_key] = True
         market = self._get_market(market_id)
         now_ts = self._now_ts()
+        staker_addr = staker if isinstance(staker, Address) else Address(staker)
         staking_window_open = (
             int(market.status) in (STATUS_OPEN, STATUS_RESOLVING) and now_ts <= int(market.deadline_ts)
         )
         if staking_window_open:
-            self._stake_for(market_id, Address(staker), side, int(amount))
+            self._stake_for(market_id, staker_addr, side, int(amount))
         else:
-            self._credit_late_stake(market_id, Address(staker), int(amount))
+            self.late_base_deposit[tx_key] = True
+            self._credit_late_stake(market_id, staker_addr, int(amount))
 
     @gl.public.write
     def claim(self, market_id: int) -> int:
@@ -1019,10 +1069,13 @@ Rules:
         _require(not pos.claimed, "already claimed")
 
         winning_pool, distributable = self._losing_pool_after_fees(market)
+        empty_winning_side = winning_pool == 0
         my_winning_stake = (
             int(pos.yes_amount) if status == STATUS_RESOLVED_YES else int(pos.no_amount)
         )
         late = int(pos.late_amount)
+        if empty_winning_side:
+            my_winning_stake = int(pos.yes_amount) + int(pos.no_amount)
         _require(my_winning_stake > 0 or late > 0, "no winning stake to claim")
 
         share = (distributable * my_winning_stake) // winning_pool if winning_pool > 0 else 0
@@ -1122,6 +1175,7 @@ Rules:
             int(market.deadline_ts),
             now_ts,
         )
+        verdict = self._enforce_chronology(steps, step_index, verdict)
         self._apply_verdict_to_step(market, step, verdict, now_ts)
         self._log(
             market_id,
@@ -1172,6 +1226,7 @@ Rules:
                 int(market.deadline_ts),
                 now_ts,
             )
+            verdict = self._enforce_chronology(steps, index, verdict)
             self._apply_verdict_to_step(market, step, verdict, now_ts)
             self._log(
                 market_id,
@@ -1363,6 +1418,10 @@ Rules:
         return bool(self.applied_base_tx.get(base_tx_hash.strip().lower()))
 
     @gl.public.view
+    def is_stake_late(self, deposit_id: str) -> bool:
+        return bool(self.late_base_deposit.get(deposit_id.strip().lower()))
+
+    @gl.public.view
     def get_balance_of(self, address: str) -> int:
         """Deprecated in V1: balances are held by Base Sepolia escrow."""
         return 0
@@ -1433,12 +1492,15 @@ Rules:
         if stakers is None:
             return []
         winning_pool, distributable = self._losing_pool_after_fees(market)
+        empty_winning_side = winning_pool == 0
         rows: list[dict] = []
         for addr in stakers:
             pos = self.positions.get(self._position_key(market_id, addr))
             if pos is None:
                 continue
             if status == STATUS_CANCELLED:
+                payout = int(pos.yes_amount) + int(pos.no_amount) + int(pos.late_amount)
+            elif empty_winning_side:
                 payout = int(pos.yes_amount) + int(pos.no_amount) + int(pos.late_amount)
             else:
                 winning_stake = int(pos.yes_amount) if status == STATUS_RESOLVED_YES else int(pos.no_amount)

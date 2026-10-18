@@ -153,6 +153,8 @@ router.get('/api/stakes/:txHash', asyncRoute(async (req, res) => {
   if (!row) return res.status(404).json({ status: 'pending_confirmation' });
   res.json({
     baseTxHash: row.base_tx_hash,
+    depositId: row.deposit_id,
+    logIndex: Number(row.log_index),
     marketId: Number(row.market_id),
     status: row.status,
     attempts: row.attempts,
@@ -170,6 +172,8 @@ router.get('/api/stakes', asyncRoute(async (req, res) => {
   const rows = await listStakesForAddress(address, 50);
   res.json(rows.map((row) => ({
     baseTxHash: row.base_tx_hash,
+    depositId: row.deposit_id,
+    logIndex: Number(row.log_index),
     marketId: Number(row.market_id),
     side: row.side,
     amount: row.amount,

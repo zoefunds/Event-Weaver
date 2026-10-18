@@ -71,12 +71,13 @@ def make_market(vm, c, creator=ALICE, steps=None, deadline=DEADLINE, floor=70) -
     )
 
 
-def verdict(occurred, can_still, confidence, reasoning="because evidence"):
+def verdict(occurred, can_still, confidence, reasoning="because evidence", occurred_at_ts=0):
     return json.dumps(
         {
             "occurred": occurred,
             "can_still_occur": can_still,
             "confidence": confidence,
+            "occurred_at_ts": occurred_at_ts,
             "reasoning": reasoning,
             "evidence_summary": "source excerpt",
         }
@@ -97,7 +98,7 @@ _tx_counter = [0]
 def next_tx_hash() -> str:
     """A fresh, unique fake Base Sepolia tx hash for each relayed stake."""
     _tx_counter[0] += 1
-    return "0x" + format(_tx_counter[0], "064x")
+    return "0x" + format(_tx_counter[0], "064x") + ":0"
 
 
 def relayer_stake(vm, c, market_id, staker, side, amount, tx_hash=None, sender=OWNER):
@@ -108,6 +109,8 @@ def relayer_stake(vm, c, market_id, staker, side, amount, tx_hash=None, sender=O
     (market_id, staker, side, amount) standing in for that confirmed event."""
     if tx_hash is None:
         tx_hash = next_tx_hash()
+    elif tx_hash and ":" not in tx_hash:
+        tx_hash = tx_hash + ":0"
     prior_sender, prior_value = vm.sender, vm.value
     vm.sender = sender
     vm.value = 0
@@ -342,13 +345,37 @@ def test_record_stake_is_idempotent_on_base_tx_hash():
         make_market(vm, c)
         tx_hash = "0x" + "ab" * 32
         relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN, tx_hash=tx_hash)
-        assert c.is_stake_applied(tx_hash) is True
+        assert c.is_stake_applied(tx_hash + ":0") is True
         # Retry of the exact same deposit (relayer restart, duplicate scan, …)
         relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN, tx_hash=tx_hash)
         pos = c.get_position(0, hx(BOB))
         assert pos["yes_amount"] == 2 * GEN  # unchanged — not doubled
         assert c.get_pool(0)["yes_pool"] == 2 * GEN
         assert c.get_platform_stats()["total_stakes"] == 1
+
+
+def test_same_transaction_distinct_log_indexes_are_individually_credited():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.sender = OWNER
+        tx_hash = "0x" + "ef" * 32
+        c.record_stake(0, hx(BOB), SIDE_YES, GEN, tx_hash + ":4")
+        c.record_stake(0, hx(BOB), SIDE_YES, 2 * GEN, tx_hash + ":5")
+        c.record_stake(0, hx(BOB), SIDE_YES, 2 * GEN, tx_hash + ":5")
+        assert c.get_pool(0)["yes_pool"] == 3 * GEN
+        assert c.get_platform_stats()["total_stakes"] == 2
+
+
+def test_record_stake_accepts_sdk_decoded_address_object():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.sender = OWNER
+        c.record_stake(0, BOB, SIDE_YES, GEN, next_tx_hash())
+        assert c.get_position(0, hx(BOB))["yes_amount"] == GEN
 
 
 def test_record_stake_requires_base_tx_hash():
@@ -579,6 +606,55 @@ def test_protocol_fees_accrue_and_sweep():
         swept = c.sweep_protocol_fees()
         assert swept == (10 * GEN * 100) // 10000
         assert c.get_platform_stats()["accrued_protocol_fees"] == 0
+
+
+def test_market_fee_snapshot_survives_global_fee_change():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, GEN)
+        vm.sender = OWNER
+        c.set_fees(500, 500)
+        mock_sources(vm)
+        vm.mock_llm(r".*", verdict(True, False, 90))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        c.request_resolution(0)
+        payout = c.get_base_payouts(0)[0]["amount"]
+        assert payout == 2 * GEN + (GEN - (GEN * 150) // 10000)
+        assert c.get_market(0)["protocol_fee_bps"] == 100
+
+
+def test_empty_winning_side_refunds_every_staker_without_fees():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 3 * GEN)
+        mock_sources(vm)
+        vm.mock_llm(r".*", verdict(True, False, 90))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        c.request_resolution(0)
+        payouts = c.get_base_payouts(0)
+        assert len(payouts) == 1 and same(payouts[0]["address"], hx(CAROL))
+        assert payouts[0]["amount"] == 3 * GEN
+        assert c.get_platform_stats()["accrued_protocol_fees"] == 0
+
+
+def test_real_world_chronology_contradiction_breaks_chain():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm)
+        vm.mock_llm(r".*Apple announces.*", verdict(True, False, 95, occurred_at_ts=NOW + 20))
+        vm.mock_llm(r".*Meta cuts.*", verdict(True, False, 95, occurred_at_ts=NOW + 10))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVED_NO"
+        assert result["steps"][1]["state"] == "FAILED"
+        assert "Chronology violation" in result["steps"][1]["reasoning"]
 
 
 # ---------------------------------------------------------------------------

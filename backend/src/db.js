@@ -13,7 +13,7 @@ const memory = {
   markets: new Map(),
   activity: new Map(), // marketId -> rows
   stats: {},
-  pendingStakes: new Map(), // base_tx_hash -> row
+  pendingStakes: new Map(), // deposit_id (tx hash + log index) -> row
 };
 
 export function hasDb() {
@@ -77,7 +77,9 @@ export async function initDb(logger) {
     -- independent of whether the GenLayer write ever lands, and the relay
     -- loop keeps retrying every row that isn't 'applied' yet.
     CREATE TABLE IF NOT EXISTS pending_stakes (
-      base_tx_hash TEXT PRIMARY KEY,
+      deposit_id   TEXT PRIMARY KEY,
+      base_tx_hash TEXT NOT NULL,
+      log_index    BIGINT NOT NULL,
       market_id    BIGINT NOT NULL,
       staker       TEXT NOT NULL,
       side         SMALLINT NOT NULL,
@@ -92,6 +94,18 @@ export async function initDb(logger) {
     );
     CREATE INDEX IF NOT EXISTS idx_pending_stakes_status ON pending_stakes (status);
     CREATE INDEX IF NOT EXISTS idx_pending_stakes_staker ON pending_stakes (lower(staker));
+  `);
+  // In-place migration from the V1 tx-hash-only schema. Existing rows are
+  // preserved as log index 0; future events are unique by tx hash + log index.
+  await pool.query(`
+    ALTER TABLE pending_stakes ADD COLUMN IF NOT EXISTS deposit_id TEXT;
+    ALTER TABLE pending_stakes ADD COLUMN IF NOT EXISTS log_index BIGINT;
+    UPDATE pending_stakes SET log_index = 0 WHERE log_index IS NULL;
+    UPDATE pending_stakes SET deposit_id = lower(base_tx_hash) || ':' || log_index WHERE deposit_id IS NULL;
+    ALTER TABLE pending_stakes ALTER COLUMN deposit_id SET NOT NULL;
+    ALTER TABLE pending_stakes ALTER COLUMN log_index SET NOT NULL;
+    ALTER TABLE pending_stakes DROP CONSTRAINT IF EXISTS pending_stakes_pkey;
+    ALTER TABLE pending_stakes ADD CONSTRAINT pending_stakes_pkey PRIMARY KEY (deposit_id);
   `);
   logger.info('database migrated and ready');
 }
@@ -226,15 +240,17 @@ export async function setSyncState(key, value) {
   );
 }
 
-/** Insert newly-detected confirmed deposits. Idempotent on base_tx_hash —
+/** Insert confirmed deposit events. Idempotent on tx hash + log index —
  * re-scanning the same block range (e.g. after a restart) is always safe. */
 export async function insertPendingStakes(rows) {
   if (!rows.length) return;
   if (!pool) {
     for (const r of rows) {
-      if (!memory.pendingStakes.has(r.baseTxHash)) {
-        memory.pendingStakes.set(r.baseTxHash, {
+      if (!memory.pendingStakes.has(r.depositId)) {
+        memory.pendingStakes.set(r.depositId, {
+          deposit_id: r.depositId,
           base_tx_hash: r.baseTxHash,
+          log_index: r.logIndex,
           market_id: r.marketId,
           staker: r.staker,
           side: r.side,
@@ -251,10 +267,10 @@ export async function insertPendingStakes(rows) {
   }
   for (const r of rows) {
     await pool.query(
-      `INSERT INTO pending_stakes (base_tx_hash, market_id, staker, side, amount, block_number)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (base_tx_hash) DO NOTHING`,
-      [r.baseTxHash, r.marketId, r.staker, r.side, r.amount, r.blockNumber]
+      `INSERT INTO pending_stakes (deposit_id, base_tx_hash, log_index, market_id, staker, side, amount, block_number)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (deposit_id) DO NOTHING`,
+      [r.depositId, r.baseTxHash, r.logIndex, r.marketId, r.staker, r.side, r.amount, r.blockNumber]
     );
   }
 }
@@ -272,34 +288,34 @@ export async function listUnappliedStakes(limit = 25) {
   return res.rows;
 }
 
-export async function markStakeApplied(baseTxHash, genlayerTxHash) {
+export async function markStakeApplied(depositId, genlayerTxHash) {
   if (!pool) {
-    const row = memory.pendingStakes.get(baseTxHash);
+    const row = memory.pendingStakes.get(depositId);
     if (row) { row.status = 'applied'; row.genlayer_tx_hash = genlayerTxHash; row.last_error = null; }
     return;
   }
   await pool.query(
     `UPDATE pending_stakes SET status = 'applied', genlayer_tx_hash = $2, last_error = NULL, updated_at = now()
-     WHERE base_tx_hash = $1`,
-    [baseTxHash, genlayerTxHash]
+     WHERE deposit_id = $1`,
+    [depositId, genlayerTxHash]
   );
 }
 
-export async function markStakeFailed(baseTxHash, errorMessage) {
+export async function markStakeFailed(depositId, errorMessage) {
   if (!pool) {
-    const row = memory.pendingStakes.get(baseTxHash);
+    const row = memory.pendingStakes.get(depositId);
     if (row) { row.attempts += 1; row.last_error = errorMessage; row.status = 'retry_pending'; }
     return;
   }
   await pool.query(
     `UPDATE pending_stakes SET attempts = attempts + 1, last_error = $2, status = 'retry_pending', updated_at = now()
-     WHERE base_tx_hash = $1`,
-    [baseTxHash, errorMessage]
+     WHERE deposit_id = $1`,
+    [depositId, errorMessage]
   );
 }
 
 export async function getStakeByTxHash(baseTxHash) {
-  if (!pool) return memory.pendingStakes.get(baseTxHash) ?? null;
+  if (!pool) return [...memory.pendingStakes.values()].find((r) => r.base_tx_hash === baseTxHash) ?? null;
   const res = await pool.query('SELECT * FROM pending_stakes WHERE base_tx_hash = $1', [baseTxHash]);
   return res.rows[0] ?? null;
 }
