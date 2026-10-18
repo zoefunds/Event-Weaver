@@ -17,6 +17,22 @@ test('pending, unsuccessful, wrong-contract and wrong-market verdict transaction
   ]) assert.throws(() => assertFinalizedSuccessfulTransaction({ ...acceptedTx, ...mutation }, contract, ['request_resolution'], 7));
 });
 
+test('accepts the current StudioNet finalized receipt shape only with a successful majority leader result', () => {
+  const finalizedTx = {
+    statusName: 'FINALIZED', result_name: 'MAJORITY_AGREE', to_address: contract,
+    data: { calldata: { readable: '{"args":[7,]"method":"request_resolution"}' } },
+    consensus_data: { leader_receipt: [{ execution_result: 'SUCCESS', result: { status: 'return' } }] },
+  };
+  assert.doesNotThrow(() => assertFinalizedSuccessfulTransaction(finalizedTx, contract, ['request_resolution'], 7));
+  assert.throws(() => assertFinalizedSuccessfulTransaction(
+    { ...finalizedTx, result_name: 'NO_MAJORITY' }, contract, ['request_resolution'], 7
+  ));
+  assert.throws(() => assertFinalizedSuccessfulTransaction(
+    { ...finalizedTx, data: { calldata: { readable: '{"args":[8,]"method":"request_resolution"}' } } },
+    contract, ['request_resolution'], 7
+  ));
+});
+
 test('fabricated verdicts and altered payout instructions are rejected', () => {
   const input = {
     marketId: 7,

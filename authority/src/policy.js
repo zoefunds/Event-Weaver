@@ -31,16 +31,34 @@ export function assertCanonicalDeposit({ body, event, escrow }) {
 }
 
 export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allowedFunctions, marketId) {
-  if (!tx || tx.statusName !== 'ACCEPTED' || tx.txExecutionResultName !== 'SUCCESS' || tx.consensus_data?.final !== true) {
+  // StudioNet has used two receipt shapes. Older receipts report ACCEPTED
+  // with an explicit consensus final flag; current receipts report FINALIZED
+  // with an agreed result and a successful leader execution receipt. Accept
+  // either complete representation, never a merely pending/accepted result.
+  const legacyFinalSuccess = tx?.statusName === 'ACCEPTED'
+    && tx?.txExecutionResultName === 'SUCCESS'
+    && tx?.consensus_data?.final === true;
+  const finalizedReceipt = tx?.statusName === 'FINALIZED'
+    && tx?.result_name === 'MAJORITY_AGREE'
+    && tx?.consensus_data?.leader_receipt?.some((receipt) =>
+      receipt?.execution_result === 'SUCCESS' && receipt?.result?.status === 'return'
+    );
+  if (!legacyFinalSuccess && !finalizedReceipt) {
     throw new Error('verdict transaction is not finalized and successful');
   }
   const target = tx.to_address ?? tx.recipient;
   if (!target || getAddress(String(target)) !== getAddress(expectedContract)) throw new Error('wrong GenLayer contract identity');
   const decoded = tx.txDataDecoded ?? {};
-  const functionName = decoded.functionName ?? decoded.function_name ?? decoded.method;
+  // Current StudioNet responses expose human-readable calldata rather than
+  // txDataDecoded. Parse only the method name and market id needed to bind
+  // this receipt; canonical on-chain reads bind every financial field.
+  const readable = tx.data?.calldata?.readable ?? '';
+  const functionName = decoded.functionName ?? decoded.function_name ?? decoded.method
+    ?? readable.match(/"method"\s*:\s*"([^"]+)"/)?.[1];
   if (!allowedFunctions.includes(functionName)) throw new Error('transaction is not an authorized resolution method');
-  const args = decoded.args ?? decoded.arguments ?? [];
-  if (Number(args[0]) !== Number(marketId)) throw new Error('verdict transaction market mismatch');
+  const args = decoded.args ?? decoded.arguments;
+  const receiptMarketId = args ? Number(args[0]) : Number(readable.match(/"args"\s*:\s*\[\s*(-?\d+)/)?.[1]);
+  if (receiptMarketId !== Number(marketId)) throw new Error('verdict transaction market mismatch');
 }
 
 export function assertCanonicalSettlement({ marketId, market, report, payouts, pool }) {
