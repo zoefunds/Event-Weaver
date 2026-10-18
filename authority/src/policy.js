@@ -30,6 +30,23 @@ export function assertCanonicalDeposit({ body, event, escrow }) {
   }
 }
 
+/** A deposit applied after a staking window closes is intentionally recorded
+ * as `late_amount`, not as a YES/NO position. It still must be acknowledged
+ * on Base so the pending principal reserve is released into a later
+ * cancellation/refund allocation. */
+export function assertCanonicalAppliedDeposit({ position, appliedLate, side, amount }) {
+  const principal = BigInt(amount);
+  if (principal <= 0n) throw new Error('invalid applied deposit amount');
+  const credited = appliedLate
+    ? BigInt(position?.late_amount ?? 0)
+    : BigInt(Number(side) === 1 ? (position?.yes_amount ?? 0) : (position?.no_amount ?? 0));
+  if (credited < principal) {
+    throw new Error(appliedLate
+      ? 'canonical GenLayer position does not contain the late-refund amount'
+      : 'canonical GenLayer position does not contain the deposited side and amount');
+  }
+}
+
 export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allowedFunctions, marketId) {
   // StudioNet has used two receipt shapes. Older receipts report ACCEPTED
   // with an explicit consensus final flag; current receipts report FINALIZED

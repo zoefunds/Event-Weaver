@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction } from '../src/policy.js';
+import { assertCanonicalAppliedDeposit, assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction } from '../src/policy.js';
 
 const contract = '0x1111111111111111111111111111111111111111';
 const recipient = '0x2222222222222222222222222222222222222222';
@@ -63,4 +63,11 @@ test('deposit authorization binds log identity, market, depositor, side and amou
     { ...body, side: 2 }, { ...body, depositId: `${body.baseTxHash}:8` },
     { ...body, amount: '101' }, { ...body, marketId: 8 }, { ...body, recipient: contract },
   ]) assert.throws(() => assertCanonicalDeposit({ body: changed, event, escrow: contract }));
+});
+
+test('late applied deposits are acknowledged against late_amount rather than a betting side', () => {
+  const position = { yes_amount: '0', no_amount: '0', late_amount: '100' };
+  assert.doesNotThrow(() => assertCanonicalAppliedDeposit({ position, appliedLate: true, side: 1, amount: '100' }));
+  assert.throws(() => assertCanonicalAppliedDeposit({ position, appliedLate: false, side: 1, amount: '100' }));
+  assert.throws(() => assertCanonicalAppliedDeposit({ position: { ...position, late_amount: '99' }, appliedLate: true, side: 2, amount: '100' }));
 });

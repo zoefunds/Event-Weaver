@@ -3,7 +3,7 @@ import express from 'express';
 import { AbiCoder, Contract, Interface, JsonRpcProvider, Wallet, getBytes, getAddress, keccak256, toUtf8Bytes } from 'ethers';
 import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
-import { assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction, canonicalJson } from './policy.js';
+import { assertCanonicalAppliedDeposit, assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction, canonicalJson } from './policy.js';
 
 const cfg = {
   port: Number(process.env.PORT ?? 8080),
@@ -91,9 +91,9 @@ app.post('/v1/acknowledge-deposit', async (req, res, next) => {
   try {
     const body = req.body; const depositHash = await verifiedDeposit(body);
     if (!await read('is_stake_applied', [body.depositId])) throw new Error('deposit is not finalized in canonical GenLayer state');
+    const appliedLate = await read('is_stake_late', [body.depositId]);
     const position = await read('get_position', [Number(body.marketId), body.recipient]);
-    const sideAmount = Number(body.side) === 1 ? BigInt(position.yes_amount) : BigInt(position.no_amount);
-    if (sideAmount < BigInt(body.amount)) throw new Error('canonical GenLayer position does not contain the deposited side and amount');
+    assertCanonicalAppliedDeposit({ position, appliedLate, side: body.side, amount: body.amount });
     if (await escrow.handledDeposit(depositHash)) throw new Error('deposit already handled');
     const applicationHash = keccak256(toUtf8Bytes(`GENLAYER_FINAL_STATE:${cfg.genLayerContract.toLowerCase()}:${body.depositId}`));
     const { chainId, escrowAddress } = await context();
