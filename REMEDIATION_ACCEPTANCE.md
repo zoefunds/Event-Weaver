@@ -7,8 +7,8 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 
 | Component | Address / identity |
 | --- | --- |
-| GenLayer StudioNet contract | `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f` |
-| Base Sepolia escrow | [`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c) |
+| GenLayer StudioNet contract | `0xEA4a86A6b477a5552F7B149a646f25c756653657` |
+| Base Sepolia escrow | [`0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18`](https://sepolia.basescan.org/address/0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18) |
 | Base Sepolia test USDC | [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
 | Relayer / deployment wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
 | Independent settlement authority | `0xb26B9762edc49f261Ad9fF26FeF0AD6c43930D01` |
@@ -16,25 +16,31 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 | Frontend | [eventweaver-orpin.vercel.app](https://eventweaver-orpin.vercel.app) |
 
 The escrow constructor permanently binds the USDC token, relayer, independent authority,
-and canonical GenLayer contract. Financial roles are immutable. Its deployment block is `48280044`.
+and canonical GenLayer contract. Financial roles are immutable. Its deployment block is `48282047`.
 
 Deployment evidence:
 
-- GenLayer deployment `0x91820667c008afd59e91aebd5bdd23b1d0623d9024f8c988d2efe70aa22d5f15`:
+- GenLayer deployment `0x5078a451ea496adb01e552b6e0bbb4a53d2d264019bbc5805311af3c320f855c`:
   `ACCEPTED`, `MAJORITY_AGREE`, five commits, five reveals, and five AGREE votes; every GenVM
   execution receipt reported `SUCCESS`.
-- Base deployment [`0x364e2d5b206d0be499cc07e6ef96775d58b425ecc0b48f313780399624230729`](https://sepolia.basescan.org/tx/0x364e2d5b206d0be499cc07e6ef96775d58b425ecc0b48f313780399624230729).
+- Base deployment [`0x05ef641ee1a856abb62c40232a4017d829d9e26b7cfac2513e6142a759afbd57`](https://sepolia.basescan.org/tx/0x05ef641ee1a856abb62c40232a4017d829d9e26b7cfac2513e6142a759afbd57).
 - Vercel production deployment `dpl_5oJ2QTmL35o3zVskAbRpBoFftoti` is aliased to the
   public frontend. Public backend `/health` and `/api/config` report the same GenLayer address.
 - The authority runs as a separate Fly application. The backend contains no authority private
   key; it has only a private service URL and bearer token. The obsolete backend key secret was removed.
 
+## Fresh live YES outcome with losing-pool distribution
+
+Market 0 verifies the Bitcoin genesis-to-first-halving chronology on the canonical pair above.
+
+1. Creation: GenLayer `0xcc1bf29421fed4eb7f3f28c1398027a677d547bc1b3c2f6dcc0a599626ad75f1`.
+2. Authenticated Base registration: [`0x26a74058098248d88a8b0c2430e89033ec846f9066c5b9f8cca902c89d5943ad`](https://sepolia.basescan.org/tx/0x26a74058098248d88a8b0c2430e89033ec846f9066c5b9f8cca902c89d5943ad).
+3. YES 0.100000 USDC: [`0x913882fac9102efc351fd5542fc53e69505bfa4b12fc696dfc99cccfeef2e35a`](https://sepolia.basescan.org/tx/0x913882fac9102efc351fd5542fc53e69505bfa4b12fc696dfc99cccfeef2e35a), deposit id `txHash:2`; NO 0.200000 USDC: [`0x08f7361aa8a4ed1e030a42274c77d7df389d13b328360850d907a06c6510c139`](https://sepolia.basescan.org/tx/0x08f7361aa8a4ed1e030a42274c77d7df389d13b328360850d907a06c6510c139), deposit id `txHash:103`.
+4. Finalized successful GenVM resolution: `0x160628752e3b7fb3b510ba182b2b747ab3fb662d27eafd9c4a13b2b6ee09e7cb`, recorded through `/finalization-proof` as `RESOLVED_YES`.
+5. Authority-signed settlement: [`0xe26f6e2e3958571c294e520226fa7d650a04c763fb24dec3875804f0f6d0aec1`](https://sepolia.basescan.org/tx/0xe26f6e2e3958571c294e520226fa7d650a04c763fb24dec3875804f0f6d0aec1), allocating 297000 units.
+6. Recipient claim: [`0xf4e0615ecc550b2ea486b0954f04c11678eeef9f2991a2c1fb38316492d0693b`](https://sepolia.basescan.org/tx/0xf4e0615ecc550b2ea486b0954f04c11678eeef9f2991a2c1fb38316492d0693b). Balance was `120895500` before claim and `121192500` after claim (+297000 base units).
+
 ## Historical live YES outcome with losing-pool distribution
-
-This completed value-transfer sequence belongs to the preceding, retired matched pair. It is
-retained as historical evidence; it must not be read as activity on the immutable pair above.
-
-Market 0 verifies the Bitcoin genesis-to-first-halving chronology.
 
 1. Creation: GenLayer `0xfcebdee911689807c85d5bea8a0439800902508e724a165a06bb237b6ea9ef40`,
    accepted with five validator commitments and reveals.

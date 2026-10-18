@@ -31,8 +31,8 @@ logs, pending liabilities, recipients and amounts before returning a signature.
 cd authority
 fly deploy -a eventweaver-settlement-authority
 fly secrets set -a eventweaver-settlement-authority \
-  GENLAYER_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
-  BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
+  GENLAYER_CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
+  BASE_ESCROW_ADDRESS=0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18 \
   SETTLEMENT_AUTHORITY_PRIVATE_KEY=<authority-only-key> \
   AUTHORITY_API_TOKEN=<shared-api-token>
 ```
@@ -46,10 +46,10 @@ cd backend
 fly launch --no-deploy --copy-config --name eventweaver-api-v2
 fly postgres create --name eventweaver-api-v2-db --region iad
 fly postgres attach eventweaver-api-v2-db --app eventweaver-api-v2   # sets DATABASE_URL
-fly secrets set CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
-  GENLAYER_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
-  BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
-  BASE_ESCROW_DEPLOYMENT_BLOCK=48280044 \
+fly secrets set CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
+  GENLAYER_CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
+  BASE_ESCROW_ADDRESS=0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18 \
+  BASE_ESCROW_DEPLOYMENT_BLOCK=48282047 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
   SETTLEMENT_SIGNER_URL=http://eventweaver-settlement-authority.internal:8080 \
   SETTLEMENT_SIGNER_TOKEN=<shared-api-token> \

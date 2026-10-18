@@ -28,7 +28,7 @@ Runner: `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` (docs
 
 ## V1 USDC settlement
 
-The GenLayer contract is the outcome and allocation ledger, not a native-token custodian. It records USDC-denominated positions in six-decimal units and exposes `get_base_payouts(market_id)` after a terminal result. The backend submits that immutable allocation list to the Base Sepolia escrow at `0xd1c6864eCE3f06B1a18932905ab816635726040c`; settlement additionally requires a separate authority signature bound to the finalized verdict and complete payout hash. Each recipient then claims USDC directly from the escrow. The escrow's `claimable` view is the authoritative post-claim balance.
+The GenLayer contract is the outcome and allocation ledger, not a native-token custodian. It records USDC-denominated positions in six-decimal units and exposes `get_base_payouts(market_id)` after a terminal result. The backend submits that immutable allocation list to the Base Sepolia escrow at `0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18`; settlement additionally requires a separate authority signature bound to the finalized verdict and complete payout hash. Each recipient then claims USDC directly from the escrow. The escrow's `claimable` view is the authoritative post-claim balance.
 
 ## Fees & settlement
 

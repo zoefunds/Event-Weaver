@@ -7,8 +7,8 @@
 | Live app | https://eventweaver-orpin.vercel.app |
 | Backend API (health check) | https://eventweaver-api-v2.fly.dev/health |
 | Full source code | https://github.com/zoefunds/Event-Weaver |
-| Intelligent Contract address (GenLayer StudioNet) | `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f` |
-| Base Sepolia USDC escrow | `0xd1c6864eCE3f06B1a18932905ab816635726040c` |
+| Intelligent Contract address (GenLayer StudioNet) | `0xEA4a86A6b477a5552F7B149a646f25c756653657` |
+| Base Sepolia USDC escrow | [0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18](https://sepolia.basescan.org/address/0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
 ## What it does, in plain terms
