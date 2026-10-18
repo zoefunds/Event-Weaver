@@ -716,21 +716,22 @@ def test_real_world_chronology_contradiction_breaks_chain():
         assert "Chronology violation" in result["steps"][1]["reasoning"]
 
 
-def test_timestamp_disagreement_is_explicitly_non_equivalent_for_consensus():
+def test_date_disagreement_is_explicitly_non_equivalent_and_can_reverse_outcome():
     source = CONTRACT.read_text()
-    assert "agree exactly on 'occurred_at_ts'" in source
+    assert "agree on the UTC calendar date represented by 'occurred_at_ts'" in source
+    assert "opposite sides of the market deadline" in source
     assert "can reverse chronology" in source
 
-    # The disagreement is outcome-critical: the leader's later timestamp
-    # would fulfill step 2, while a validator's earlier timestamp reverses
-    # order and deterministically breaks the chain.
+    # The disagreement is outcome-critical: a validator placing step 2 on
+    # the preceding UTC date reverses order and deterministically breaks the
+    # chain. Same-date time-of-day normalization is intentionally immaterial.
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
         mock_sources(vm)
-        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 10))
-        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 5))
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 86400))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 172800))
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         result = c.request_resolution(0)
         assert result["status"] == "RESOLVED_NO"

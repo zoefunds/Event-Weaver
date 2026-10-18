@@ -98,8 +98,10 @@ VERDICT_EQUIVALENCE_PRINCIPLE = (
     "boolean value of 'occurred' AND on the boolean value of "
     "'can_still_occur', and their 'confidence' values are within 25 "
     "points of each other. When 'occurred' is true, they MUST also "
-    "agree exactly on 'occurred_at_ts'; a different date or timestamp "
-    "is materially non-equivalent because it can reverse chronology "
+    "agree on the UTC calendar date represented by 'occurred_at_ts'. "
+    "Different seconds within that same UTC date are equivalent unless "
+    "they fall on opposite sides of the market deadline; a different UTC "
+    "date is materially non-equivalent because it can reverse chronology "
     "or deadline compliance. Differences in wording of 'reasoning' or "
     "'evidence_summary', formatting, or key order are irrelevant."
 )
@@ -650,6 +652,8 @@ Respond with ONLY a JSON object, no markdown, with exactly these keys:
 
 Rules:
 - "occurred" must be true ONLY with concrete supporting evidence, including its event date/time.
+- When evidence establishes only a calendar date, use 00:00:00 UTC on that date. Do not invent
+  a time of day. Validators must agree on the UTC date used for chronology and deadline checks.
 - In this ordered chain, its event time must be later than the prior fulfilled step's event time.
 - If evidence is missing or ambiguous, set occurred=false, can_still_occur=true, confidence below 50.
 - The event must have occurred on or before the event-occurrence deadline. Evidence published
@@ -674,7 +678,7 @@ Rules:
         The principle is deliberately outcome-focused and tolerant: the
         leader's result stands only when validators agree on the verdict
         booleans, rough confidence band, and the exact decision-critical
-        occurrence timestamp for a positive verdict, regardless of prose wording.
+        occurrence date for a positive verdict, regardless of prose wording.
         This prevents leader rotation / Undetermined results caused by
         immaterial differences in fetched page snapshots.
         """

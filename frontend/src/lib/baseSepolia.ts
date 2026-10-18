@@ -3,7 +3,8 @@
 export const BASE_SEPOLIA_CHAIN_ID = '0x14a34';
 export const USDC_ADDRESS = (import.meta.env.VITE_BASE_SEPOLIA_USDC ??
   '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as `0x${string}`;
-export const ESCROW_ADDRESS = (import.meta.env.VITE_BASE_ESCROW_ADDRESS ?? '') as `0x${string}`;
+export const ESCROW_ADDRESS = (import.meta.env.VITE_BASE_ESCROW_ADDRESS ??
+  '0xEfff243f63a44AF9cAF9F99397458E680c1F1eB4') as `0x${string}`;
 export const USDC = 10n ** 6n;
 
 interface Provider { request(args: { method: string; params?: unknown[] }): Promise<unknown>; }

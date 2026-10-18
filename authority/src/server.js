@@ -146,4 +146,6 @@ app.post('/v1/settlement', async (req, res, next) => {
 });
 
 app.use((err, _req, res, _next) => res.status(422).json({ error: err.message }));
-app.listen(cfg.port, '0.0.0.0');
+// Fly's private `.internal` service discovery resolves to machine IPv6.
+// The unspecified IPv6 address accepts both private IPv6 and proxied IPv4.
+app.listen(cfg.port, '::');
