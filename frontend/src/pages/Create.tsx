@@ -123,7 +123,7 @@ export default function Create() {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <label className="label-caps mb-2 block text-on-variant">Deadline</label>
+            <label className="label-caps mb-2 block text-on-variant">Event occurrence deadline</label>
             <input
               type="datetime-local"
               value={deadline}
@@ -131,6 +131,9 @@ export default function Create() {
               className="w-full rounded-lg border border-outline-variant bg-black/40 px-4 py-3 text-on-surface outline-none focus:border-primary"
               style={{ colorScheme: 'dark' }}
             />
+            <p className="mt-2 text-[11px] leading-tight text-outline">
+              Events must occur by this time. Evidence may still be verified during the seven-day verification window that follows.
+            </p>
           </div>
 
           <div className="glass rounded-xl p-6">

@@ -18,6 +18,7 @@ export interface ChainStep {
   confidence: number;
   reasoning: string;
   evidence_summary: string;
+  occurred_at_ts: number;
   checked_at_ts: number;
   check_count: number;
 }
@@ -30,6 +31,7 @@ export interface Market {
   category: string;
   created_ts: number;
   deadline_ts: number;
+  verification_deadline_ts: number;
   status: MarketStatus;
   confidence_floor: number;
   yes_pool: number;

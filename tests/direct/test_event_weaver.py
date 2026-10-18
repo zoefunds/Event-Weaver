@@ -43,6 +43,7 @@ CAROL = create_address("carol")
 GEN = 10**18
 NOW = int(time.time())
 DEADLINE = NOW + 45 * 86400
+VERIFICATION_GRACE = 7 * 86400
 
 STEPS = [
     {"description": "Apple announces a Vision Pro price cut", "sources": ["https://www.apple.com/newsroom/"]},
@@ -290,7 +291,8 @@ def test_late_refund_is_idempotent_and_claimable_after_expiry():
         relayer_stake(vm, c, 0, BOB, SIDE_YES, 3 * GEN, tx_hash=tx_hash)  # retry: no double credit
         assert c.get_position(0, hx(BOB))["late_amount"] == 3 * GEN
 
-        c.expire_market(0)  # deadline passed with no full chain → EXPIRED
+        vm.warp(iso(DEADLINE + VERIFICATION_GRACE + 1))
+        c.expire_market(0)  # verification window passed with no full chain → EXPIRED
         payouts = c.get_base_payouts(0)
         assert len(payouts) == 1
         assert same(payouts[0]["address"], hx(BOB))
@@ -535,8 +537,27 @@ def test_expire_market_is_deterministic():
         with vm.expect_revert():          # before deadline → refuse
             c.expire_market(0)
         vm.warp(iso(DEADLINE + 1))
-        c.expire_market(0)                # after deadline → NO side wins
+        with vm.expect_revert():          # event deadline is not evidence cutoff
+            c.expire_market(0)
+        vm.warp(iso(DEADLINE + VERIFICATION_GRACE + 1))
+        c.expire_market(0)                # after verification window → NO wins
         assert c.get_market(0)["status"] == "EXPIRED"
+
+
+def test_delayed_evidence_can_prove_on_time_events_during_verification_window():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm, body="Evidence published after the deadline confirms both earlier events.")
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=DEADLINE - 200))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=DEADLINE - 100))
+        vm.warp(iso(DEADLINE + 2 * 86400))
+        vm.sender = BOB
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVED_YES"
+        assert result["steps"][0]["occurred_at_ts"] == DEADLINE - 200
+        assert result["steps"][1]["occurred_at_ts"] == DEADLINE - 100
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +608,21 @@ def test_owner_controls():
         assert c.get_config()["protocol_fee_bps"] == 200
 
 
+def test_pause_does_not_block_recording_or_refunding_existing_deposit():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        vm.sender = OWNER
+        c.pause()
+        # Financial obligations already created on Base remain serviceable.
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN)
+        assert c.get_position(0, hx(BOB))["yes_amount"] == GEN
+        vm.warp(iso(DEADLINE + 1))
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, 2 * GEN)
+        assert c.get_position(0, hx(CAROL))["late_amount"] == 2 * GEN
+
+
 def test_protocol_fees_accrue_and_sweep():
     vm = VMContext()
     with vm.activate():
@@ -631,6 +667,24 @@ def test_market_fee_snapshot_survives_global_fee_change():
         assert c.get_market(0)["protocol_fee_bps"] == 100
 
 
+def test_quote_payout_uses_fee_snapshot_and_empty_side_policy():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, 2 * GEN)
+        relayer_stake(vm, c, 0, CAROL, SIDE_NO, GEN)
+        vm.sender = OWNER
+        c.set_fees(500, 500)
+        quote = c.quote_payout(0, hx(BOB))
+        assert quote["hypothetical_yes_win"] == 2 * GEN + (GEN - (GEN * 150) // 10000)
+
+        empty_mid = make_market(vm, c)
+        relayer_stake(vm, c, empty_mid, CAROL, SIDE_NO, 3 * GEN)
+        empty_quote = c.quote_payout(empty_mid, hx(CAROL))
+        assert empty_quote["hypothetical_yes_win"] == 3 * GEN
+
+
 def test_empty_winning_side_refunds_every_staker_without_fees():
     vm = VMContext()
     with vm.activate():
@@ -660,6 +714,26 @@ def test_real_world_chronology_contradiction_breaks_chain():
         assert result["status"] == "RESOLVED_NO"
         assert result["steps"][1]["state"] == "FAILED"
         assert "Chronology violation" in result["steps"][1]["reasoning"]
+
+
+def test_timestamp_disagreement_is_explicitly_non_equivalent_for_consensus():
+    source = CONTRACT.read_text()
+    assert "agree exactly on 'occurred_at_ts'" in source
+    assert "can reverse chronology" in source
+
+    # The disagreement is outcome-critical: the leader's later timestamp
+    # would fulfill step 2, while a validator's earlier timestamp reverses
+    # order and deterministically breaks the chain.
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm)
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 10))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 5))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVED_NO"
 
 
 def test_positive_verdict_without_event_time_stays_pending():
@@ -783,7 +857,7 @@ def test_fabricated_stale_timestamp_cannot_delay_or_avoid_expiry():
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
-        vm.warp(iso(DEADLINE + 1))
+        vm.warp(iso(DEADLINE + VERIFICATION_GRACE + 1))
         # No way for the caller to claim it's still before the deadline —
         # the contract's own clock (warped here to model real block time)
         # decides, and it says the deadline has passed.

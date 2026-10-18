@@ -1,0 +1,16 @@
+{
+  "name": "eventweaver-settlement-authority",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
+    "express": "^5.2.1",
+    "genlayer-js": "^1.1.8"
+  }
+}

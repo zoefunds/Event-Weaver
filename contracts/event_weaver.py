@@ -70,6 +70,10 @@ MAX_TOTAL_FEE_BPS: int = 1000          # combined fees can never exceed 10%
 
 BPS_DENOMINATOR: int = 10000
 
+# `deadline_ts` is the last time a real-world event may occur. Validators get
+# a separate seven-day window to discover and verify evidence published late.
+VERIFICATION_GRACE_SECONDS: int = 7 * 24 * 60 * 60
+
 # Error prefixes — deterministic, machine-parseable failure classes.
 ERR_EXPECTED = "EXPECTED: "     # caller mistake (bad input, wrong state)
 ERR_EXTERNAL = "EXTERNAL: "     # upstream/web failure
@@ -87,6 +91,18 @@ DEFAULT_CATEGORIES: list[str] = [
     "Climate",
     "Other",
 ]
+
+VERDICT_EQUIVALENCE_PRINCIPLE = (
+    "Both results are JSON verdicts about whether the same real-world "
+    "condition occurred. Treat them as equivalent if they agree on the "
+    "boolean value of 'occurred' AND on the boolean value of "
+    "'can_still_occur', and their 'confidence' values are within 25 "
+    "points of each other. When 'occurred' is true, they MUST also "
+    "agree exactly on 'occurred_at_ts'; a different date or timestamp "
+    "is materially non-equivalent because it can reverse chronology "
+    "or deadline compliance. Differences in wording of 'reasoning' or "
+    "'evidence_summary', formatting, or key order are irrelevant."
+)
 
 
 # ============================================================================
@@ -123,7 +139,8 @@ class Market:
     description: str
     category: str
     created_ts: u64
-    deadline_ts: u64            # after this, an unresolved chain expires to NO
+    deadline_ts: u64            # latest allowed real-world event occurrence
+    verification_deadline_ts: u64  # after this, an unresolved chain expires to NO
     status: u8
     confidence_floor: u8        # per-market floor for step verdicts
     yes_pool: u256              # USDC base units (6 decimals) staked on YES
@@ -542,6 +559,7 @@ class EventWeaver(gl.Contract):
             "category": market.category,
             "created_ts": int(market.created_ts),
             "deadline_ts": int(market.deadline_ts),
+            "verification_deadline_ts": int(market.verification_deadline_ts),
             "status": STATUS_NAMES.get(int(market.status), "OPEN"),
             "confidence_floor": int(market.confidence_floor),
             "yes_pool": yes_pool,
@@ -615,7 +633,7 @@ CONDITION (step {step_index + 1} of the chain):
 CONTEXT FROM EARLIER CHAIN STEPS:
 {prior_context if prior_context else "(this is the first step)"}
 
-TIMING: current unix time is {now_ts}; the market deadline is unix time {deadline_ts}.
+TIMING: current unix time is {now_ts}; the event-occurrence deadline is unix time {deadline_ts}; evidence may be verified until unix time {deadline_ts + VERIFICATION_GRACE_SECONDS}.
 
 EVIDENCE:
 {evidence_text}
@@ -634,7 +652,10 @@ Rules:
 - "occurred" must be true ONLY with concrete supporting evidence, including its event date/time.
 - In this ordered chain, its event time must be later than the prior fulfilled step's event time.
 - If evidence is missing or ambiguous, set occurred=false, can_still_occur=true, confidence below 50.
-- If the deadline has passed and it did not occur, set can_still_occur=false.
+- The event must have occurred on or before the event-occurrence deadline. Evidence published
+  later is valid during the verification window if it proves an on-time occurrence.
+- If the event-occurrence deadline has passed and evidence proves it did not occur on time,
+  set can_still_occur=false. Missing or delayed evidence alone is not proof of non-occurrence.
 - Keep reasoning under 120 words."""
 
     def _adjudicate_step_nondet(
@@ -651,8 +672,9 @@ Rules:
         comparative equivalence principle.
 
         The principle is deliberately outcome-focused and tolerant: the
-        leader's result stands as long as validators agree on the verdict
-        booleans and rough confidence band, regardless of prose wording.
+        leader's result stands only when validators agree on the verdict
+        booleans, rough confidence band, and the exact decision-critical
+        occurrence timestamp for a positive verdict, regardless of prose wording.
         This prevents leader rotation / Undetermined results caused by
         immaterial differences in fetched page snapshots.
         """
@@ -684,16 +706,7 @@ Rules:
                 sort_keys=True,
             )
 
-        principle = (
-            "Both results are JSON verdicts about whether the same real-world "
-            "condition occurred. Treat them as equivalent if they agree on the "
-            "boolean value of 'occurred' AND on the boolean value of "
-            "'can_still_occur', and their 'confidence' values are within 25 "
-            "points of each other. Differences in wording of 'reasoning' or "
-            "'evidence_summary', formatting, or key order are irrelevant."
-        )
-
-        raw_result = gl.eq_principle.prompt_comparative(leader, principle)
+        raw_result = gl.eq_principle.prompt_comparative(leader, VERDICT_EQUIVALENCE_PRINCIPLE)
         return _parse_verdict_payload(raw_result)
 
     def _apply_verdict_to_step(self, market: Market, step: ChainStep, verdict: dict, now_ts: int) -> None:
@@ -784,7 +797,7 @@ Rules:
             market.status = u8(STATUS_RESOLVED_NO)
         elif fulfilled == total_steps and total_steps > 0:
             market.status = u8(STATUS_RESOLVED_YES)
-        elif now_ts > int(market.deadline_ts):
+        elif now_ts > int(market.verification_deadline_ts):
             market.status = u8(STATUS_EXPIRED)
         else:
             return  # still undecided — stays RESOLVING
@@ -857,7 +870,9 @@ Rules:
             title / description / category: market metadata.
             steps_json: JSON array of {"description": str, "sources": [url,...]}
                 objects, ordered — the causal chain. 2..12 steps.
-            deadline_ts: unix time after which an unresolved chain expires.
+            deadline_ts: latest unix time at which every real-world event may occur.
+                Evidence may still be verified during the fixed seven-day
+                verification window that follows.
             confidence_floor: 55..95, per-step confidence needed to flip a
                 step's state.
 
@@ -918,6 +933,7 @@ Rules:
             category=category.strip(),
             created_ts=u64(now_ts),
             deadline_ts=u64(deadline_ts),
+            verification_deadline_ts=u64(deadline_ts + VERIFICATION_GRACE_SECONDS),
             status=u8(STATUS_OPEN),
             confidence_floor=u8(floor),
             yes_pool=u256(0),
@@ -959,7 +975,6 @@ Rules:
         necessarily gl.message.sender, since the caller is always the
         relayer acting on a confirmed Base Sepolia deposit (see
         record_stake)."""
-        self._not_paused()
         now_ts = self._now_ts()
         market = self._get_market(market_id)
         _require(
@@ -1000,7 +1015,6 @@ Rules:
         at face value via `late_amount` rather than entering yes_pool/
         no_pool, where it would change payout odds after the fact for every
         other staker."""
-        self._not_paused()
         now_ts = self._now_ts()
         self._get_market(market_id)
         _require(amount > 0, "stake amount must be positive")
@@ -1270,13 +1284,14 @@ Rules:
 
     @gl.public.write
     def expire_market(self, market_id: int) -> None:
-        """Deterministically expire a market whose deadline passed without the
-        full chain being verified. NO side wins. Anyone may call."""
+        """Expire only after the post-event evidence-verification window.
+        `deadline_ts` limits event occurrence; it does not cut off delayed
+        publication or verification of evidence. Anyone may call."""
         now_ts = self._now_ts()
         market = self._get_market(market_id)
         status = int(market.status)
         _require(status in (STATUS_OPEN, STATUS_RESOLVING), "market is not expirable")
-        _require(now_ts > int(market.deadline_ts), "deadline has not passed yet")
+        _require(now_ts > int(market.verification_deadline_ts), "verification window has not passed yet")
         market.status = u8(STATUS_RESOLVING)
         self._maybe_finalize(market, now_ts)
 
@@ -1473,10 +1488,14 @@ Rules:
             return {"claimable": 0, "hypothetical_yes_win": 0, "hypothetical_no_win": 0, "claimed": False}
 
         status = int(market.status)
-        total_fee_bps = int(self.protocol_fee_bps) + int(self.creator_fee_bps)
+        total_fee_bps = int(market.protocol_fee_bps) + int(market.creator_fee_bps)
 
         def _hypo(my_stake: int, winning_pool: int, losing_pool: int) -> int:
-            if my_stake <= 0 or winning_pool <= 0:
+            if winning_pool <= 0:
+                # No participant backed the hypothetical winning side: the
+                # terminal policy refunds every participant's principal.
+                return int(pos.yes_amount) + int(pos.no_amount)
+            if my_stake <= 0:
                 return 0
             distributable = losing_pool - (losing_pool * total_fee_bps) // BPS_DENOMINATOR
             return my_stake + (distributable * my_stake) // winning_pool
@@ -1603,6 +1622,7 @@ Rules:
             "max_steps_per_market": MAX_STEPS_PER_MARKET,
             "min_steps_per_market": MIN_STEPS_PER_MARKET,
             "max_sources_per_step": MAX_SOURCES_PER_STEP,
+            "verification_grace_seconds": VERIFICATION_GRACE_SECONDS,
         }
 
     @gl.public.view

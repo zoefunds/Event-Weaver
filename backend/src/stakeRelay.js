@@ -26,7 +26,7 @@ import { createClient as createGenlayerClient, createAccount } from 'genlayer-js
 import { studionet } from 'genlayer-js/chains';
 import { config } from './config.js';
 import { readContract, plain } from './genlayer.js';
-import { isBaseMarketSettled, relayLateRefund } from './baseSepolia.js';
+import { acknowledgeBaseDeposit, relayDepositRefund } from './baseSepolia.js';
 import {
   getSyncState,
   setSyncState,
@@ -75,15 +75,17 @@ export function isStakeRelayConfigured() {
 /** Scan new, confirmed `Staked` events into pending_stakes. Never re-derives
  * a smaller confirmation depth than configured — a reorg-affected deposit
  * simply isn't scanned yet, it is never un-recorded once seen. */
-export async function scanForDeposits(logger) {
-  const p = provider();
-  const escrow = new Contract(config.baseSepolia.escrowAddress, ESCROW_ABI, p);
+export async function scanForDeposits(logger, dependencies = {}) {
+  const p = dependencies.provider ?? provider();
+  const escrow = dependencies.escrow ?? new Contract(config.baseSepolia.escrowAddress, ESCROW_ABI, p);
   const head = await p.getBlockNumber();
   const safeHead = head - config.baseSepolia.stakeConfirmations;
   if (safeHead < 0) return;
 
   const stored = await getSyncState(LAST_BLOCK_KEY);
-  const fromBlock = stored ? Number(stored) + 1 : Math.max(0, safeHead - MAX_BLOCK_RANGE);
+  // A missing cursor means database loss or first boot. Start at the escrow
+  // deployment block and advance in bounded ranges; never skip old deposits.
+  const fromBlock = stored ? Number(stored) + 1 : config.baseSepolia.escrowDeploymentBlock;
   if (fromBlock > safeHead) return;
   const toBlock = Math.min(safeHead, fromBlock + MAX_BLOCK_RANGE);
 
@@ -119,8 +121,7 @@ export async function applyPendingStakes(logger) {
       if (alreadyApplied) {
         // GenLayer already has it (e.g. a prior attempt's receipt wait timed
         // out after the write actually landed) — reconcile without retrying.
-        const isLate = await readContract('is_stake_late', [row.deposit_id]);
-        if (isLate && await isBaseMarketSettled(Number(row.market_id))) await relayLateRefund(row, logger);
+        await acknowledgeBaseDeposit(row, logger);
         await markStakeApplied(row.deposit_id, null);
         continue;
       }
@@ -136,13 +137,22 @@ export async function applyPendingStakes(logger) {
         interval: 3000,
         retries: 60,
       });
-      const isLate = await readContract('is_stake_late', [row.deposit_id]);
-      if (isLate && await isBaseMarketSettled(Number(row.market_id))) await relayLateRefund(row, logger);
+      await acknowledgeBaseDeposit(row, logger);
       await markStakeApplied(row.deposit_id, hash);
       stakeRelayState.applied += 1;
       stakeRelayState.lastApplyError = null;
       logger.info({ depositId: row.deposit_id, marketId: row.market_id }, 'stake applied to GenLayer');
     } catch (err) {
+      if (/market .*not found|unknown market/i.test(err.message) || Number(row.attempts) >= 9) {
+        try {
+          await relayDepositRefund(row, 'GENLAYER_APPLICATION_FAILED', logger);
+          await markStakeApplied(row.deposit_id, null);
+          logger.warn({ depositId: row.deposit_id }, 'unapplied deposit safely converted to Base refund');
+          continue;
+        } catch (refundError) {
+          logger.error({ err: refundError.message, depositId: row.deposit_id }, 'deposit refund authorization failed; keeping liability pending');
+        }
+      }
       await markStakeFailed(row.deposit_id, err.message);
       stakeRelayState.lastApplyError = err.message;
       logger.error({ err: err.message, depositId: row.deposit_id }, 'stake apply failed; will retry');

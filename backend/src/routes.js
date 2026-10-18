@@ -4,7 +4,7 @@ import { readContract, plain } from './genlayer.js';
 import { indexerState } from './indexer.js';
 import { resolverState } from './resolver.js';
 import { config } from './config.js';
-import { getBaseClaimable } from './baseSepolia.js';
+import { baseRelayState, getBaseClaimable } from './baseSepolia.js';
 import { stakeRelayState } from './stakeRelay.js';
 
 export const router = Router();
@@ -36,6 +36,7 @@ router.get('/health', asyncRoute(async (_req, res) => {
       lastScanError: stakeRelayState.lastScanError,
       lastApplyError: stakeRelayState.lastApplyError,
     },
+    baseRelay: baseRelayState,
     contract: config.contractAddress,
     uptimeSec: Math.floor(process.uptime()),
   });

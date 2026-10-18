@@ -22,7 +22,7 @@ export function MarketCard({ market }: { market: Market }) {
           <StatusChip status={market.status} />
         </div>
         <div className="shrink-0 text-right">
-          <div className="label-caps text-outline">Deadline</div>
+          <div className="label-caps text-outline">Event deadline</div>
           <div className="text-sm text-on-surface" style={{ fontFamily: 'var(--font-mono)' }}>
             {deadline.toLocaleDateString()}
           </div>

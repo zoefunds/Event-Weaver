@@ -155,6 +155,7 @@ export default function MarketDetail() {
   const isTerminal = ['RESOLVED_YES', 'RESOLVED_NO', 'EXPIRED', 'CANCELLED'].includes(market.status);
   const canClaim = baseClaimable > 0n;
   const deadlinePassed = Date.now() / 1000 > market.deadline_ts;
+  const verificationDeadline = market.verification_deadline_ts || market.deadline_ts;
   // Contract policy: pre-deadline adjudication is creator-only; post-deadline
   // it is permissionless (and the backend auto-triggers it anyway).
   const canAdjudicate =
@@ -289,8 +290,9 @@ export default function MarketDetail() {
                 {canAdjudicate
                   ? 'As the market creator you can verify steps early. '
                   : ''}
-                Adjudication runs automatically once the deadline passes — GenLayer validators
-                fetch the evidence and settle the chain.
+                Adjudication runs automatically once the event deadline passes. Validators can
+                verify evidence during the seven-day verification window, but every positive
+                verdict must prove the event occurred by its deadline.
               </p>
             )}
 
@@ -328,7 +330,8 @@ export default function MarketDetail() {
           <div className="glass rounded-xl p-6 text-sm">
             <h3 className="label-caps mb-4 text-on-variant">Market parameters</h3>
             <Row k="Creator" v={`${market.creator.slice(0, 10)}…`} mono />
-            <Row k="Deadline" v={new Date(market.deadline_ts * 1000).toLocaleString()} />
+            <Row k="Event deadline" v={new Date(market.deadline_ts * 1000).toLocaleString()} />
+            <Row k="Evidence cutoff" v={new Date(verificationDeadline * 1000).toLocaleString()} />
             <Row k="Confidence floor" v={`${market.confidence_floor}%`} />
             <Row k="Steps" v={`${market.steps_fulfilled}/${market.step_count} fulfilled`} />
             <Row k="Stake actions" v={String(market.stake_count)} />
