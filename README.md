@@ -392,8 +392,8 @@ recovery that blocks stale relay replays (see [REMEDIATION_ACCEPTANCE.md](REMEDI
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3` (GenLayer StudioNet; deployment tx `0xafa30cc2bbfd7a360a980e8a12386ac5c1fd4b09cecedc8d3fd55ded89255449`) |
-| Base Sepolia USDC escrow | [`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD) (authority-bound settlement and pending-deposit reserve) |
+| Intelligent Contract | `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f` (GenLayer StudioNet; deployment tx `0x91820667c008afd59e91aebd5bdd23b1d0623d9024f8c988d2efe70aa22d5f15`) |
+| Base Sepolia USDC escrow | [`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c) (immutable authority boundary and pending-deposit reserve) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |

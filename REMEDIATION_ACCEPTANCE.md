@@ -7,8 +7,8 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 
 | Component | Address / identity |
 | --- | --- |
-| GenLayer StudioNet contract | `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3` |
-| Base Sepolia escrow | [`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD) |
+| GenLayer StudioNet contract | `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f` |
+| Base Sepolia escrow | [`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c) |
 | Base Sepolia test USDC | [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
 | Relayer / deployment wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
 | Independent settlement authority | `0xb26B9762edc49f261Ad9fF26FeF0AD6c43930D01` |
@@ -16,15 +16,15 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 | Frontend | [eventweaver-orpin.vercel.app](https://eventweaver-orpin.vercel.app) |
 
 The escrow constructor permanently binds the USDC token, relayer, independent authority,
-and canonical GenLayer contract. Its deployment block is `48278617`.
+and canonical GenLayer contract. Financial roles are immutable. Its deployment block is `48280044`.
 
 Deployment evidence:
 
-- GenLayer deployment `0xafa30cc2bbfd7a360a980e8a12386ac5c1fd4b09cecedc8d3fd55ded89255449`:
+- GenLayer deployment `0x91820667c008afd59e91aebd5bdd23b1d0623d9024f8c988d2efe70aa22d5f15`:
   `ACCEPTED`, `MAJORITY_AGREE`, five commits, five reveals, and five AGREE votes; every GenVM
   execution receipt reported `SUCCESS`.
-- Base deployment [`0x356aab7f3e63e68c67f992b05620b9371b0d9aab40fcac9544186479d9f25969`](https://sepolia.basescan.org/tx/0x356aab7f3e63e68c67f992b05620b9371b0d9aab40fcac9544186479d9f25969).
-- Vercel production deployment `dpl_ywLE56b5xz2yRif69JvYqrCmRDrK` is aliased to the
+- Base deployment [`0x364e2d5b206d0be499cc07e6ef96775d58b425ecc0b48f313780399624230729`](https://sepolia.basescan.org/tx/0x364e2d5b206d0be499cc07e6ef96775d58b425ecc0b48f313780399624230729).
+- Vercel production deployment `dpl_5oJ2QTmL35o3zVskAbRpBoFftoti` is aliased to the
   public frontend. Public backend `/health` and `/api/config` report the same GenLayer address.
 - The authority runs as a separate Fly application. The backend contains no authority private
   key; it has only a private service URL and bearer token. The obsolete backend key secret was removed.
