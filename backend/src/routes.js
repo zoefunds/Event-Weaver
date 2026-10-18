@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { listMarkets, getMarket, getActivity, getActorActivity, getStats, dbHealthy, hasDb, getStakeByTxHash, listStakesForAddress } from './db.js';
-import { readContract, plain } from './genlayer.js';
+import { listMarkets, getMarket, getActivity, getActorActivity, getStats, dbHealthy, hasDb, getStakeByTxHash, listStakesForAddress, setSyncState } from './db.js';
+import { getTransaction, readContract, plain } from './genlayer.js';
+import { assertFinalizedMarketProof } from './finalizationProof.js';
 import { indexerState } from './indexer.js';
 import { resolverState } from './resolver.js';
 import { config } from './config.js';
@@ -88,6 +89,25 @@ router.get('/api/markets/:id/resolution', asyncRoute(async (req, res) => {
   } catch {
     res.status(404).json({ error: 'market not found' });
   }
+}));
+
+/** Capture a wallet-triggered resolution or cancellation receipt. The backend
+ * validates target, method, market id and finalized-success status before it
+ * becomes eligible for the separately operated authority to verify again. */
+router.post('/api/markets/:id/finalization-proof', asyncRoute(async (req, res) => {
+  const marketId = Number(req.params.id);
+  const txHash = String(req.body?.txHash ?? '');
+  if (!Number.isInteger(marketId) || marketId < 0 || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    return res.status(400).json({ error: 'valid market id and finalized transaction hash required' });
+  }
+  const tx = await getTransaction(txHash);
+  const method = assertFinalizedMarketProof(tx, config.contractAddress, marketId);
+  const market = plain(await readContract('get_market', [marketId]));
+  if (!['RESOLVED_YES', 'RESOLVED_NO', 'EXPIRED', 'CANCELLED'].includes(market.status)) {
+    return res.status(409).json({ error: 'market is not terminal yet' });
+  }
+  await setSyncState(`resolutionTx:${marketId}`, txHash.toLowerCase());
+  res.status(202).json({ marketId, txHash: txHash.toLowerCase(), method, status: market.status });
 }));
 
 /** Portfolio: positions + quotes + balance + notifications for an address.

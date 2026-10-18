@@ -126,6 +126,7 @@ class ChainStep:
     evidence_summary: str     # short summary of what evidence supported the verdict
     checked_at_ts: u64        # unix ts (caller-supplied clock) of last check
     occurred_at_ts: u64       # evidence-backed real-world event time (0 if unknown)
+    occurred_at_precision: str  # "exact" only with time-of-day evidence; otherwise "date"
     check_count: u32          # how many adjudication passes touched this step
 
 
@@ -333,6 +334,8 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
         occurred_at_ts = max(0, int(occurred_at_raw or 0))
     except (ValueError, TypeError):
         occurred_at_ts = 0
+    precision_raw = str(_first_present(payload, ["occurred_at_precision", "event_time_precision"]) or "date").lower()
+    occurred_at_precision = "exact" if precision_raw == "exact" else "date"
 
     if occurred is None:
         # Unclear verdict — treat as low-confidence "not yet", never crash.
@@ -345,6 +348,7 @@ def _parse_verdict_payload(raw: typing.Any) -> dict:
         "can_still_occur": can_still,
         "confidence": confidence,
         "occurred_at_ts": occurred_at_ts,
+        "occurred_at_precision": occurred_at_precision,
         "reasoning": reasoning,
         "evidence_summary": evidence_summary,
     }
@@ -545,6 +549,7 @@ class EventWeaver(gl.Contract):
             "evidence_summary": step.evidence_summary,
             "checked_at_ts": int(step.checked_at_ts),
             "occurred_at_ts": int(step.occurred_at_ts),
+            "occurred_at_precision": step.occurred_at_precision,
             "check_count": int(step.check_count),
         }
 
@@ -647,6 +652,7 @@ Respond with ONLY a JSON object, no markdown, with exactly these keys:
   "can_still_occur": true or false — if it has not occurred, is it still possible before the deadline?
   "confidence": integer 0-100 — your confidence in the "occurred" answer,
   "occurred_at_ts": unix timestamp of when it occurred, or 0 when not evidenced,
+  "occurred_at_precision": "exact" only when evidence establishes a time of day; otherwise "date",
   "reasoning": one short paragraph explaining the verdict,
   "evidence_summary": one sentence naming which evidence supported the verdict
 }}
@@ -705,6 +711,7 @@ Rules:
                     "can_still_occur": verdict["can_still_occur"],
                     "confidence": verdict["confidence"],
                     "occurred_at_ts": int(verdict.get("occurred_at_ts", 0)),
+                    "occurred_at_precision": verdict.get("occurred_at_precision", "date"),
                     "reasoning": _truncate(verdict["reasoning"], 800),
                     "evidence_summary": _truncate(verdict["evidence_summary"], 300),
                 },
@@ -746,6 +753,7 @@ Rules:
         step.reasoning = _truncate(str(verdict["reasoning"]), MAX_REASONING_STORED)
         step.evidence_summary = _truncate(str(verdict["evidence_summary"]), 400)
         step.occurred_at_ts = u64(max(0, int(verdict.get("occurred_at_ts", 0))))
+        step.occurred_at_precision = str(verdict.get("occurred_at_precision", "date"))
         step.checked_at_ts = u64(max(0, now_ts))
         step.check_count = u32(int(step.check_count) + 1)
 
@@ -779,7 +787,22 @@ Rules:
             )
             return verdict
         previous_ts = int(steps[step_index - 1].occurred_at_ts) if step_index > 0 else 0
-        if step_index > 0 and (previous_ts <= 0 or current_ts <= previous_ts):
+        if step_index > 0 and previous_ts <= 0:
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = True
+            verdict["confidence"] = 0
+            verdict["reasoning"] = "Chronology is inconclusive: the prior fulfilled step has no evidence-backed event time."
+        elif step_index > 0 and current_ts == previous_ts and (
+            str(verdict.get("occurred_at_precision", "date")) != "exact"
+            or str(steps[step_index - 1].occurred_at_precision) != "exact"
+        ):
+            # Date-only evidence maps to midnight UTC. Equal values therefore
+            # mean order is unknown, not that the chain is proven reversed.
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = True
+            verdict["confidence"] = 0
+            verdict["reasoning"] = "Chronology is inconclusive: date-only evidence does not establish same-day ordering."
+        elif step_index > 0 and current_ts <= previous_ts:
             verdict["occurred"] = False
             verdict["can_still_occur"] = False
             verdict["confidence"] = 100
@@ -967,6 +990,7 @@ Rules:
                     evidence_summary="",
                     checked_at_ts=u64(0),
                     occurred_at_ts=u64(0),
+                    occurred_at_precision="date",
                     check_count=u32(0),
                 )
             )

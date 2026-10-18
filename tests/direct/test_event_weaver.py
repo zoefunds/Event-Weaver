@@ -72,13 +72,14 @@ def make_market(vm, c, creator=ALICE, steps=None, deadline=DEADLINE, floor=70) -
     )
 
 
-def verdict(occurred, can_still, confidence, reasoning="because evidence", occurred_at_ts=0):
+def verdict(occurred, can_still, confidence, reasoning="because evidence", occurred_at_ts=0, occurred_at_precision="exact"):
     return json.dumps(
         {
             "occurred": occurred,
             "can_still_occur": can_still,
             "confidence": confidence,
             "occurred_at_ts": occurred_at_ts,
+            "occurred_at_precision": occurred_at_precision,
             "reasoning": reasoning,
             "evidence_summary": "source excerpt",
         }
@@ -751,6 +752,22 @@ def test_same_day_timestamp_disagreement_is_explicitly_non_equivalent_and_can_re
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         result = c.request_resolution(0)
         assert result["status"] == "RESOLVED_NO"
+
+
+def test_same_day_date_only_evidence_stays_pending_not_a_confirmed_reversal():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm)
+        day = NOW - 86400
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=day, occurred_at_precision="date"))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=day, occurred_at_precision="date"))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVING"
+        assert result["steps"][1]["state"] == "PENDING"
+        assert "same-day ordering" in result["steps"][1]["reasoning"]
 
 
 def test_positive_verdict_without_event_time_stays_pending():

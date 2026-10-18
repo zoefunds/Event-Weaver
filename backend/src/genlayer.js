@@ -37,6 +37,10 @@ export async function readContract(functionName, args = [], attempt = 0) {
   }
 }
 
+export async function getTransaction(hash) {
+  return client.getTransaction({ hash });
+}
+
 /** Normalize genlayer-js return values (Maps/BigInts) into plain JSON. */
 export function plain(value) {
   if (value instanceof Map) {

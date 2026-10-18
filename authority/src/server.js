@@ -133,7 +133,8 @@ app.post('/v1/settlement', async (req, res, next) => {
     if (!/^0x[0-9a-fA-F]{64}$/.test(resolutionTxHash)) throw new Error('finalized resolution transaction hash is required');
     const resolutionTx = await genlayer.getTransaction({ hash: resolutionTxHash });
     assertFinalizedSuccessfulTransaction(
-      plain(resolutionTx), cfg.genLayerContract, ['request_resolution', 'check_step', 'expire_market'], marketId
+      plain(resolutionTx), cfg.genLayerContract,
+      ['request_resolution', 'check_step', 'expire_market', 'cancel_market'], marketId
     );
     const [market, report, payouts, pool] = await Promise.all([
       read('get_market', [marketId]), read('get_resolution_report', [marketId]),
