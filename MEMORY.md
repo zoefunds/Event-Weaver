@@ -27,7 +27,9 @@ through an external escrow while GenLayer stores positions and computes final al
 ## V1 value-transfer path
 1. The wallet approves test USDC and calls Base escrow `stake(market_id, side, amount)`.
 2. The relay records each confirmed `Staked` log using `txHash:logIndex`; only the relay can call GenLayer `record_stake`.
-3. On terminal resolution, the backend builds the canonical payout commitment and an independent authority signs it before the relayer calls `settle`.
+3. On terminal resolution, the independent authority reads canonical GenLayer and Base state,
+   verifies the finalized verdict and exact payout commitment, then signs it before the backend
+   relayer calls `settle`.
 4. A deposit that cannot be applied receives an independently signed `allocateDepositRefund` allocation bound to its original event-specific deposit id.
 5. Each allocated wallet calls `claim(market_id)` to receive USDC directly.
 
@@ -41,14 +43,14 @@ through an external escrow while GenLayer stores positions and computes final al
 - **Native transfers to a MetaMask/EOA wallet require the `@gl.evm.contract_interface` stub** (`_Recipient` with empty `View`/`Write` classes, then `_Recipient(Address(to)).emit_transfer(value=v)`). `gl.get_contract_at(addr).emit_transfer(...)` is the **IC-to-IC** path only — using it to pay out to a user's wallet silently does not move real balance. This was the root cause of "claim doesn't show in my wallet." Verified fix via `eth_getBalance` delta on a real EOA before/after withdraw.
 - StudioNet has no `gen_dbg_traceTransaction`; debug via `genlayer receipt <tx> --stdout --stderr`.
 - genvm-lint validate is broken when both SDK libs are on sys.path (imports old `genlayer` first). Validate schema manually against lib `11rhn002…`.
-- Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. Never `strict_eq` for web/LLM output.
-- **A Base Sepolia escrow must never be reused across GenLayer contract redeployments.** Pools are keyed by integer `marketId`, and a new GenLayer contract restarts ids at zero. Always deploy a fresh escrow with `(usdc, relayer, settlementAuthority)` and verify `pools(0)` is empty before wiring the pair together.
+- Equivalence: use `gl.eq_principle.prompt_comparative` with a tolerant, outcome-focused principle (agree on booleans + confidence within 25 pts) to avoid leader rotation / Undetermined results. When timing is decision-critical, validators must also agree on the UTC occurrence date and whether it is before the event-occurrence deadline. Never `strict_eq` for web/LLM output.
+- **A Base Sepolia escrow must never be reused across GenLayer contract redeployments.** Pools are keyed by integer `marketId`, and a new GenLayer contract restarts ids at zero. Always deploy a fresh escrow with `(usdc, relayer, settlementAuthority, genLayerContract)` and verify `pools(0)` is empty before wiring the pair together.
 - **GenLayer contracts are immutable.** A fix means a new contract, new matched escrow, and synchronized Fly/Vercel configuration. When markets appear missing, compare `/health`, `/api/config`, the frontend bundle and on-chain `get_market_count` for the exact canonical address.
 
 ## Deployed state (live)
 - **GenLayer V1 contract**: `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`.
 - **Base Sepolia escrow**: `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
-- **Backend**: https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`). Secrets include the contract/escrow configuration and separate relayer and settlement-authority keys.
+- **Backend**: https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`). Its secrets include contract/escrow configuration, the transaction-only relayer key, and an authenticated private URL/token for the authority service. The authority signing key exists only in the separate `eventweaver-settlement-authority` Fly app.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`, `VITE_BASE_ESCROW_ADDRESS`, `VITE_BASE_SEPOLIA_USDC`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).
 - If the owner deploys a new GenLayer contract: deploy a new Base escrow too (see gotcha above), then update the matching Fly secrets and Vercel environment variables, and redeploy both. Never add the relayer key to Vercel.

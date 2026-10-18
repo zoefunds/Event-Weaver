@@ -17,10 +17,13 @@ Normal prediction markets ask one question: "will X happen?" EventWeaver markets
 chain of questions where each one only matters if the one before it came true. For example:
 "Apple cuts the Vision Pro price, AND THEN Meta cuts the Quest price within 30 days of that."
 The market only pays out YES if both things happen, in that order, before the deadline. If
-either link breaks, or the deadline passes first, it pays out NO.
+either link breaks, or the event-occurrence deadline and its seven-day evidence-verification
+window pass without a complete chain, it pays out NO.
 
-Anyone can create one of these chains, anyone can stake real tokens on YES or NO, and when
-the deadline arrives the chain gets checked automatically — no one has to press a button.
+Anyone can create one of these chains, anyone can stake real tokens on YES or NO, and the
+backend automatically requests checks as the event-occurrence deadline arrives — no one has
+to press a button. Evidence published later can still prove an event occurred on time during
+the seven-day verification window.
 Winners split what the losing side staked, minus a small fee, and claim USDC directly from
 the Base Sepolia escrow to their wallet.
 
@@ -49,10 +52,11 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
 - The tokens are real. Staking deposits Base Sepolia test USDC into the deployed escrow,
   then records the same amount on GenLayer. After resolution, the escrow sends a claimed
   USDC allocation directly to the winner's wallet.
-- The current deployment includes the fully documented “Final E2E: Bitcoin chronology” market.
-  Validators established that the Bitcoin genesis block occurred before the first halving,
-  storing both occurrence timestamps and resolving YES. The complete creation, deposit,
-  recording, adjudication, settlement and withdrawal transaction sequence is in
+- The current deployment includes documented live YES and NO Bitcoin chronology markets.
+  Validators established that the Bitcoin genesis block occurred before the first halving in
+  the YES market, storing both occurrence timestamps; a deliberately false-date market
+  resolved NO. The complete creation, deposit, recording, adjudication, settlement and
+  withdrawal transaction sequences are in
   [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
 
 ## How to use it
@@ -62,9 +66,10 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
 2. Open **Discovery** to browse markets, or **Create** to build your own chain: write each
    condition in plain English, attach 1–5 public URLs as evidence, set a deadline.
 3. On any open market, stake Base Sepolia USDC on YES or NO from the trading panel.
-4. When the deadline passes, the platform's backend automatically asks the contract to
-   adjudicate — you don't have to do anything. (Before the deadline, only the market's
-   creator can trigger an early check, so odds aren't disturbed by strangers.)
+4. At the event-occurrence deadline, the platform's backend automatically asks the contract
+   to adjudicate — you don't have to do anything. Evidence can still be verified for seven
+   days if it proves an on-time occurrence. (Before the deadline, only the market's creator
+   can trigger an early check, so odds aren't disturbed by strangers.)
 5. If your side won, go to **Portfolio** and hit Claim. The Base Sepolia escrow transfers
    USDC directly to your wallet after the transaction confirms.
 
@@ -92,9 +97,11 @@ the actual product — not a themed skin on a yes/no template.
 
 - Contract passes all three `genvm-lint` checks and its complete schema loads on-chain — the
   two most common failure points for GenLayer contracts.
-- Forty direct unit tests (`pytest tests/direct/`) cover market creation validation, USDC-denominated
-  staking, fee/settlement math, every adjudication outcome (full pass, chain break,
-  inconclusive evidence, malformed LLM output), permission rules, and admin controls.
+- 44 direct unit tests (`pytest tests/direct/`) cover market creation validation,
+  USDC-denominated staking, fee/settlement math, every adjudication outcome (full pass,
+  chain break, inconclusive evidence, malformed LLM output), permission rules, and admin
+  controls. Eight Solidity custody tests, two backend-relay tests, and two authority-boundary
+  tests cover the cross-chain financial paths.
 - Every V1 write path listed above (create, Base USDC deposit, stake record, adjudicate,
   authority-bound settlement and claim) has
   been executed against the live StudioNet contract with real transaction hashes, not just

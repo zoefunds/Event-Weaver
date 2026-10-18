@@ -95,9 +95,11 @@ authority service; the authority private key must never be present in the backen
 address must match the escrow and GenLayer relayer roles, and the authority address must match
 `EventWeaverEscrow.settlementAuthority()`.
 
-Full writeup of the confirmed-payment and crash-recovery fix — problem, root cause, fix, and
-tests — is in **[review-v1.md](review-v1.md)**. For the complete V1 migration record,
-addresses, configuration, lifecycle, and reliability design, read **[v1.md](v1.md)**.
+The historical review filename is retained in **[review-v1.md](review-v1.md)** for inbound
+links. For the current confirmed-payment and crash-recovery implementation, adversarial tests,
+deployment pair, and live transaction evidence, read
+**[REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md)**. For the complete V1 migration
+record, addresses, configuration, lifecycle, and reliability design, read **[v1.md](v1.md)**.
 
 ## Why this needs GenLayer
 
@@ -111,7 +113,9 @@ controls the money, so resolution must be decentralized and the evidence must be
 - **Validators verify outcomes, not formats.** The equivalence principle
   (`gl.eq_principle.prompt_comparative`) requires validators to agree on the **actual
   verdict** — the `occurred` / `can_still_occur` booleans and a confidence band — after
-  each has done its own fetch and LLM reasoning over the real page content.
+  each has done its own fetch and LLM reasoning over the real page content. When timing is
+  material, they must also agree on the decision-critical UTC occurrence date and whether it
+  satisfies the event-occurrence deadline.
 - **Consensus-stable by design.** Verdicts are deliberately coarse (confidence bucketed to
   the nearest 5, sticky FULFILLED states, inconclusive-stays-PENDING), so honest validators
   converge. Verified live on StudioNet: one-round `MAJORITY_AGREE`, zero leader rotations,
@@ -147,7 +151,8 @@ confidence floor, deploy:**
 ```
 OPEN ──────────────► RESOLVING ──────────► RESOLVED_YES   (every step FULFILLED)
  │   creator checks     │    auto-resolver ► RESOLVED_NO    (any step FAILED)
- │   steps early        │    at deadline   ► EXPIRED → NO   (deadline, chain incomplete)
+ │   steps early        │  after seven-day ► EXPIRED → NO   (verification window ends,
+ │                      │  verification      chain incomplete)
  └──────────────────────┴─────────────────► CANCELLED       (refunds for everyone)
 ```
 
@@ -159,8 +164,10 @@ OPEN ──────────────► RESOLVING ──────�
 3. **Adjudicate** —
    - *Before the deadline*: only the market creator (or platform owner) can trigger step
      checks, useful for progressively verifying long chains.
-   - *After the deadline*: adjudication is permissionless **and automatic** — the 24/7
-     backend resolver triggers it, validators fetch the evidence, and the chain settles.
+   - *After the event-occurrence deadline*: adjudication is permissionless **and automatic** —
+     the 24/7 backend resolver triggers it and validators fetch the evidence. Evidence may be
+     verified for seven days if it proves an on-time occurrence; only then can an incomplete
+     chain expire to NO.
    - Steps verify strictly in order; a FULFILLED step is sticky (events don't un-happen);
      inconclusive evidence never flips a step — it stays PENDING and is retried.
 4. **Settle & claim** — winners receive stake + a pro-rata share of the losing pool (minus

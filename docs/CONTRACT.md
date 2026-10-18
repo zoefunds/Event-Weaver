@@ -13,6 +13,8 @@ Runner: `py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` (docs
    accepts both.
 5. **Equivalence**: all web/LLM work runs under `gl.eq_principle.prompt_comparative` with the
    tolerance principle (verdict booleans must match; confidence within 25 pts; prose ignored).
+   When event timing can affect the outcome, the decision-critical UTC occurrence date and
+   deadline side must also match.
    Never `strict_eq` for non-deterministic output.
 6. **Verdict application**: FULFILLED is sticky; inconclusive verdicts keep steps PENDING;
    steps verify strictly in order; `can_still_occur=false` + confidence ≥ floor is the only
