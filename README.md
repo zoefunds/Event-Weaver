@@ -19,7 +19,7 @@
 1. [What is EventWeaver](#what-is-eventweaver)
 2. [Why this needs GenLayer](#why-this-needs-genlayer)
 3. [Screenshots](#screenshots)
-4. [V1 documentation](v1.md) · [Financial remediation evidence](REMEDIATION_ACCEPTANCE.md)
+4. [Deployment guide](docs/DEPLOYMENT.md) · [Financial remediation evidence](REMEDIATION_ACCEPTANCE.md)
 5. [How a market works (lifecycle)](#how-a-market-works)
 6. [The value-transfer path](#the-value-transfer-path)
 7. [Architecture](#architecture)
@@ -98,8 +98,9 @@ address must match the escrow and GenLayer relayer roles, and the authority addr
 The historical review filename is retained in **[review-v1.md](review-v1.md)** for inbound
 links. For the current confirmed-payment and crash-recovery implementation, adversarial tests,
 deployment pair, and live transaction evidence, read
-**[REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md)**. For the complete V1 migration
-record, addresses, configuration, lifecycle, and reliability design, read **[v1.md](v1.md)**.
+**[REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md)**. For current configuration,
+lifecycle, and operating instructions, read **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** and
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**. `v1.md` remains an archive for inbound links.
 
 ## Why this needs GenLayer
 
@@ -449,7 +450,8 @@ errors after the account migration, both now fixed:
   minutes instead of failing forever with no explanation.
 - **StudioNet's shared RPC limit (500 requests/hour).** Background scans now run every five
   minutes. Portfolio data is cached for 60 seconds and falls back to the most recent result
-  during a temporary throttle, avoiding a blank error page. See [v1.md](v1.md).
+  during a temporary throttle, avoiding a blank error page. See
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Full writeup: [review2.md](review2.md).
 
@@ -479,9 +481,9 @@ frontend/src/
   pages/                       Landing, Markets, MarketDetail, Create, Portfolio
   components/                  Nav, Footer, MarketCard, ChainViz, Chips, Toast, Walkthrough, Logo
   lib/                         wallet (genlayer-js + MetaMask), baseSepolia (escrow calls), api client, types, versionCheck (stale-build reload)
-tests/direct/                  40 in-memory contract tests (gltest.direct)
+tests/direct/                  48 in-memory contract tests (gltest.direct)
 docs/                          ARCHITECTURE · API · CONTRACT · DEPLOYMENT · images/
-v1.md                          V1 USDC on Base Sepolia architecture and operations
+v1.md                          archival V1 migration record (not deployment instructions)
 .github/workflows/ci.yml       lint + tests + builds
 MEMORY.md                      living decision log
 SUBMISSION.md                  review submission summary

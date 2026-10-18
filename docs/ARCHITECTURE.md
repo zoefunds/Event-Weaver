@@ -2,7 +2,8 @@
 
 EventWeaver V1 is a cross-chain prediction market. GenLayer determines market outcomes. Base Sepolia USDC provides the reserve asset, deposits, and user payouts.
 
-For deployed addresses, lifecycle, configuration, and the operating checklist, see [V1](../v1.md).
+For the active deployment addresses, configuration, and operating checklist, see
+[Deployment](DEPLOYMENT.md). The root-level `v1.md` is retained only as a historical archive.
 
 ## System overview
 
