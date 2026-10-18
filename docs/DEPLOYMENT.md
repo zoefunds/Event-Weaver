@@ -117,4 +117,6 @@ The currently reviewed pair is GenLayer `0xEce2907092e324D0C9DE5fbaBaE20aA65E12C
 with Base escrow `0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b`. Deployment transactions,
 finalized GenVM receipts, settlement proof, and before/after USDC balances are recorded in
 [`REMEDIATION_ACCEPTANCE.md`](../REMEDIATION_ACCEPTANCE.md). The Fly backend and Vercel
-frontend are deployed with this exact pair.
+frontend are deployed with this exact pair. The evidence includes an active-pair normal YES
+settlement (market 3), a funded cancellation (market 0), and a post-terminal late-deposit
+recovery (market 2); do not substitute historical transaction records for these canonical flows.

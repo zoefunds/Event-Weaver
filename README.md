@@ -367,11 +367,11 @@ cd frontend && vercel deploy --prod
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
 | Schema extraction | verified against the pinned runner SDK | complete |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **45 passing** |
+| **Direct unit tests** | `pytest -q tests/direct` (gltest.direct, mocked web/LLM) | **48 passing** |
 | Solidity escrow tests | `forge test -vv` | **11 passing** |
-| Backend relay tests | `cd backend && npm test` | **2 passing** |
-| Authority verification tests | `cd authority && npm test` | **3 passing** |
-| Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
+| Backend relay tests | `cd backend && npm test` | **4 passing** |
+| Authority verification tests | `cd authority && npm test` | **5 passing** |
+| Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → consensus adjudication → authority-authorized Base settlement → claim | verified on the canonical pair |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
 The direct suite covers creation validation, USDC-denominated stake accounting, settlement math with fees,
@@ -383,10 +383,27 @@ tests added for the confirmed-payment fix — only-the-relayer-may-stake, idempo
 the same `txHash:logIndex` deposit id (the crash-recovery case), and a terminal failed-application
 recovery that blocks stale relay replays (see [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md)).
 
-> The source revision following the live evidence also makes the relayer and settlement authority
-> immutable, binds the signed market deadline and deposit side, and requires a finalized GenVM
-> resolution transaction for settlement authorization. Those ABI changes require a fresh matched
-> GenLayer/Base deployment before they can replace the deployment pair listed below.
+The deployed pair includes the current immutable relayer and settlement-authority boundary,
+signed market registration/deposit acknowledgements, and exact terminal-GenVM-proof requirement
+for settlement authorization. It is not a migration preview: the addresses below are the active
+matched deployment.
+
+## Current live financial evidence
+
+All of these flows use the active GenLayer/Base deployment pair shown below:
+
+- **Normal YES settlement:** market 3 accepted a 0.100000-USDC YES stake and a 0.200000-USDC
+  NO stake, finalized `RESOLVED_YES` under `MAJORITY_AGREE`, allocated 297000 USDC base units,
+  and completed a recipient claim. This demonstrates losing-pool distribution end-to-end.
+- **Cancellation recovery:** market 0 accepted a 0.100000-USDC stake, finalized a cancellation,
+  then returned the complete 100000-unit principal through authority-authorized settlement and
+  a user claim.
+- **Post-terminal late deposit:** market 2 received a 0.100000-USDC deposit after cancellation.
+  The relay recorded it as `late_amount`, cleared the Base pending liability through the separate
+  authenticated path, and the recipient recovered the full 100000 units.
+
+The exact GenVM receipts, Base Sepolia transaction links, escrow liability transitions, and
+before/after wallet balances are in [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
 
 ## Deployed addresses
 

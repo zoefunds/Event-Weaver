@@ -52,13 +52,11 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
 - The tokens are real. Staking deposits Base Sepolia test USDC into the deployed escrow,
   then records the same amount on GenLayer. After resolution, the escrow sends a claimed
   USDC allocation directly to the winner's wallet.
-- Historical live evidence includes YES and NO Bitcoin chronology markets from the preceding
-  matched deployment. Validators established that the Bitcoin genesis block occurred before
-  the first halving in the YES market, storing both occurrence timestamps; a deliberately
-  false-date market resolved NO. The active immutable deployment is separately verified by
-  matching service configuration, escrow bindings, deployment receipts, and schema. The full
-  record is in
-  [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
+- The active immutable deployment has fresh matched-pair evidence for a normal YES payout with
+  losing-pool distribution, a funded cancellation refund, and a post-terminal late-deposit
+  recovery. It is verified by matching service configuration, escrow bindings, deployment
+  receipts, and schema. Exact GenVM receipts, Base Sepolia transactions, liability changes, and
+  recipient balance changes are recorded in [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
 
 ## How to use it
 
@@ -98,14 +96,14 @@ the actual product — not a themed skin on a yes/no template.
 
 - Contract passes all three `genvm-lint` checks and its complete schema loads on-chain — the
   two most common failure points for GenLayer contracts.
-- 45 direct unit tests (`pytest tests/direct/`) cover market creation validation,
+- 48 direct unit tests (`pytest -q tests/direct`) cover market creation validation,
   USDC-denominated staking, fee/settlement math, every adjudication outcome (full pass,
   chain break, inconclusive evidence, malformed LLM output), permission rules, and admin
-  controls. Eleven Solidity custody tests, two backend-relay tests, and three authority-boundary
+  controls. Eleven Solidity custody tests, four backend-relay tests, and five authority-boundary
   tests cover the cross-chain financial paths.
-- The preceding deployment exercised every V1 write path with real transaction hashes. The
-  current immutable pair has matching deployment, schema, escrow-binding, frontend, backend,
-  and authority verification; its full adverse-path coverage is reproducible in the committed
-  test suites.
+- The current immutable pair exercised the normal YES losing-pool distribution, cancellation,
+  and post-terminal late-deposit recovery paths with real transaction hashes. It has matching
+  deployment, schema, escrow-binding, frontend, backend, and authority verification; its full
+  adverse-path coverage is reproducible in the committed test suites.
 - GitHub Actions CI runs the contract lint, the test suite, and both app builds on every
   push.
