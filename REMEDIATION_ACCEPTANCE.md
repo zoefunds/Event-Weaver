@@ -7,8 +7,8 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 
 | Component | Address / identity |
 | --- | --- |
-| GenLayer StudioNet contract | `0xEA4a86A6b477a5552F7B149a646f25c756653657` |
-| Base Sepolia escrow | [`0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18`](https://sepolia.basescan.org/address/0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18) |
+| GenLayer StudioNet contract | `0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641` |
+| Base Sepolia escrow | [`0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b`](https://sepolia.basescan.org/address/0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b) |
 | Base Sepolia test USDC | [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
 | Relayer / deployment wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
 | Independent settlement authority | `0xb26B9762edc49f261Ad9fF26FeF0AD6c43930D01` |
@@ -16,22 +16,23 @@ cross-chain recovery, chronology-consensus, and deployment-consistency remediati
 | Frontend | [eventweaver-orpin.vercel.app](https://eventweaver-orpin.vercel.app) |
 
 The escrow constructor permanently binds the USDC token, relayer, independent authority,
-and canonical GenLayer contract. Financial roles are immutable. Its deployment block is `48282047`.
+and canonical GenLayer contract. Financial roles are immutable. Its deployment block is `48283907`.
 
 Deployment evidence:
 
-- GenLayer deployment `0x5078a451ea496adb01e552b6e0bbb4a53d2d264019bbc5805311af3c320f855c`:
+- GenLayer deployment `0x650616eaf223e46fc671bb3a5a1c04333c8950457c9f3c566006f675f3e6e3b1`:
   `ACCEPTED`, `MAJORITY_AGREE`, five commits, five reveals, and five AGREE votes; every GenVM
   execution receipt reported `SUCCESS`.
-- Base deployment [`0x05ef641ee1a856abb62c40232a4017d829d9e26b7cfac2513e6142a759afbd57`](https://sepolia.basescan.org/tx/0x05ef641ee1a856abb62c40232a4017d829d9e26b7cfac2513e6142a759afbd57).
+- Base deployment [`0xb3017cd54cd744b8afc2293c4d29dad74a2dc3a968558b5a1aec4afdd1379cc3`](https://sepolia.basescan.org/tx/0xb3017cd54cd744b8afc2293c4d29dad74a2dc3a968558b5a1aec4afdd1379cc3).
 - Vercel production deployment `dpl_5oJ2QTmL35o3zVskAbRpBoFftoti` is aliased to the
   public frontend. Public backend `/health` and `/api/config` report the same GenLayer address.
 - The authority runs as a separate Fly application. The backend contains no authority private
   key; it has only a private service URL and bearer token. The obsolete backend key secret was removed.
 
-## Fresh live YES outcome with losing-pool distribution
+## Previous-pair YES outcome with losing-pool distribution
 
-Market 0 verifies the Bitcoin genesis-to-first-halving chronology on the canonical pair above.
+This retained evidence was executed on the immediately preceding pair and is not the canonical
+deployment listed above.
 
 1. Creation: GenLayer `0xcc1bf29421fed4eb7f3f28c1398027a677d547bc1b3c2f6dcc0a599626ad75f1`.
 2. Authenticated Base registration: [`0x26a74058098248d88a8b0c2430e89033ec846f9066c5b9f8cca902c89d5943ad`](https://sepolia.basescan.org/tx/0x26a74058098248d88a8b0c2430e89033ec846f9066c5b9f8cca902c89d5943ad).
@@ -86,7 +87,7 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
   wrong contract/market identities, and altered allocations.
 - Pending deposits are escrow liabilities. Settlement and surplus withdrawal require
   `pending == 0`; signed acknowledgements or refunds consume each deposit exactly once.
-- Relay recovery for the active escrow starts from deployment block `48280044`, not a recent rolling window.
+- Relay recovery for the active escrow starts from deployment block `48283907`, not a recent rolling window.
 - A two-instance race was observed live and handled idempotently: one instance acknowledged a
   deposit while the other re-read `handledDeposit` and completed without retry noise.
 - Pause does not block servicing confirmed financial obligations or late-refund recovery.
@@ -94,8 +95,16 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
   evidence. Validators agree on the decision-critical exact occurrence timestamp and deadline side.
 - Fee values are snapshotted at creation. Quote and settlement use the same snapshot and the
   same empty-winning-side principal-refund policy.
-- Archived cancellation proof: settlement `0x6a9c6daa72e3426105e48655d87b3e78243b97f2d3ce1a4b8e95da3cf540a5d6`;
-  withdrawal `0xfa95382efb430a897fa12d8f71cf8bff2165e1ab549502a06c159539880556e6`.
+- Fresh matched-pair funded cancellation: GenLayer market creation
+  `0xa8adf93d15e586a542f1a3d434a8a00c4d5dca0c006fdbd02beb5891f558e141`, Base
+  registration [`0x6226eceb298733e29ebb94ef23fcce7950dff0b60df82c1015872f7c78798063`](https://sepolia.basescan.org/tx/0x6226eceb298733e29ebb94ef23fcce7950dff0b60df82c1015872f7c78798063),
+  confirmed 0.100000-USDC stake [`0x5fdfdaf054dcbc0ce6faf65669e9b5c3bb5aece64603cdb3c487c2ad0ccaf5f7`](https://sepolia.basescan.org/tx/0x5fdfdaf054dcbc0ce6faf65669e9b5c3bb5aece64603cdb3c487c2ad0ccaf5f7)
+  (event log 271), finalized cancellation
+  `0x3f50c5896ae5cc1585687fceb0176598cfcd37e16a924442c0fe85a82f701e06`, authority-signed
+  settlement [`0x77af5eb5ca6b834567239767f7294ce8214b43c33acde9afe1897727f5f2eb79`](https://sepolia.basescan.org/tx/0x77af5eb5ca6b834567239767f7294ce8214b43c33acde9afe1897727f5f2eb79), and
+  claim [`0x5ac953728358c79579e7bb7cba3b816d151abccf4d35759bcf0688b88edc45cf`](https://sepolia.basescan.org/tx/0x5ac953728358c79579e7bb7cba3b816d151abccf4d35759bcf0688b88edc45cf).
+  The pool was `deposited=100000, pending=0` before settlement; the recipient’s balance was
+  `121092500` before claim and `121192500` after (+100000 units).
 
 ## Reproducible verification
 
@@ -103,10 +112,10 @@ The historical value-transfer evidence above remains retained for review. The ac
 pair is verified by its deployment receipts, matching backend/authority health reports, escrow
 constructor reads, and the on-chain schema. Its reproducible gates are:
 
-- `pytest -q tests/direct`: **45 passed**.
+- `pytest -q tests/direct`: **48 passed**.
 - `forge test -vv`: **11 passed**.
-- `cd backend && npm test`: **2 passed**.
-- `cd authority && npm test`: **3 passed**.
+- `cd backend && npm test`: **4 passed**.
+- `cd authority && npm test`: **5 passed**.
 - `genvm-lint lint contracts/event_weaver.py`: **3 checks passed**.
 - `cd frontend && npm run lint && npm run build`: successful with only documented warnings.
 

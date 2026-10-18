@@ -760,7 +760,7 @@ def test_same_day_date_only_evidence_stays_pending_not_a_confirmed_reversal():
         c = fresh(vm)
         make_market(vm, c)
         mock_sources(vm)
-        day = NOW - 86400
+        day = ((NOW // 86400) - 2) * 86400
         vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=day, occurred_at_precision="date"))
         vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=day, occurred_at_precision="date"))
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
@@ -768,6 +768,38 @@ def test_same_day_date_only_evidence_stays_pending_not_a_confirmed_reversal():
         assert result["status"] == "RESOLVING"
         assert result["steps"][1]["state"] == "PENDING"
         assert "same-day ordering" in result["steps"][1]["reasoning"]
+
+
+def test_mixed_precision_same_day_evidence_stays_pending_not_a_reversal():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm)
+        day = ((NOW // 86400) - 2) * 86400
+        # The first event is precisely timed late in the day. The second has
+        # only a calendar date, so it might have happened before or after it.
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=day + 20 * 3600))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=day, occurred_at_precision="date"))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVING"
+        assert result["steps"][1]["state"] == "PENDING"
+        assert "same-day ordering" in result["steps"][1]["reasoning"]
+
+
+def test_date_only_event_on_deadline_day_stays_pending():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        deadline = (NOW // 86400) * 86400 + 23 * 3600
+        make_market(vm, c, deadline=deadline)
+        mock_sources(vm)
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=deadline // 86400 * 86400, occurred_at_precision="date"))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.check_step(0, 0)
+        assert result["state"] == "PENDING"
+        assert "same-day deadline" in result["reasoning"]
 
 
 def test_positive_verdict_without_event_time_stays_pending():

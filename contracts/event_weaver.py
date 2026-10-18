@@ -777,6 +777,18 @@ Rules:
             verdict["reasoning"] = "Positive verdict rejected: no plausible evidence-backed event time was supplied."
             verdict["occurred_at_ts"] = 0
             return verdict
+        current_precision = str(verdict.get("occurred_at_precision", "date"))
+        current_day = current_ts // 86400
+        deadline_day = int(market.deadline_ts) // 86400
+        # A date-only assertion covers an entire UTC calendar day. If that
+        # day contains the deadline, midnight normalization cannot establish
+        # whether the event occurred before the cutoff.
+        if current_precision != "exact" and current_day == deadline_day:
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = True
+            verdict["confidence"] = 0
+            verdict["reasoning"] = "Timing is inconclusive: date-only evidence does not establish which side of the same-day deadline the event occurred on."
+            return verdict
         if current_ts > int(market.deadline_ts):
             verdict["occurred"] = False
             verdict["can_still_occur"] = False
@@ -792,12 +804,13 @@ Rules:
             verdict["can_still_occur"] = True
             verdict["confidence"] = 0
             verdict["reasoning"] = "Chronology is inconclusive: the prior fulfilled step has no evidence-backed event time."
-        elif step_index > 0 and current_ts == previous_ts and (
-            str(verdict.get("occurred_at_precision", "date")) != "exact"
+        elif step_index > 0 and (
+            current_precision != "exact"
             or str(steps[step_index - 1].occurred_at_precision) != "exact"
-        ):
-            # Date-only evidence maps to midnight UTC. Equal values therefore
-            # mean order is unknown, not that the chain is proven reversed.
+        ) and current_day == previous_ts // 86400:
+            # Date-only evidence maps to midnight UTC. A mixed-precision pair
+            # on the same calendar day likewise has unknown ordering: the
+            # date-only event could be before or after the precise event.
             verdict["occurred"] = False
             verdict["can_still_occur"] = True
             verdict["confidence"] = 0

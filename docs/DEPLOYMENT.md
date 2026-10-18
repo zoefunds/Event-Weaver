@@ -31,8 +31,8 @@ logs, pending liabilities, recipients and amounts before returning a signature.
 cd authority
 fly deploy -a eventweaver-settlement-authority
 fly secrets set -a eventweaver-settlement-authority \
-  GENLAYER_CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
-  BASE_ESCROW_ADDRESS=0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18 \
+  GENLAYER_CONTRACT_ADDRESS=0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641 \
+  BASE_ESCROW_ADDRESS=0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b \
   SETTLEMENT_AUTHORITY_PRIVATE_KEY=<authority-only-key> \
   AUTHORITY_API_TOKEN=<shared-api-token>
 ```
@@ -46,10 +46,10 @@ cd backend
 fly launch --no-deploy --copy-config --name eventweaver-api-v2
 fly postgres create --name eventweaver-api-v2-db --region iad
 fly postgres attach eventweaver-api-v2-db --app eventweaver-api-v2   # sets DATABASE_URL
-fly secrets set CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
-  GENLAYER_CONTRACT_ADDRESS=0xEA4a86A6b477a5552F7B149a646f25c756653657 \
-  BASE_ESCROW_ADDRESS=0xd84ec8bf005f7159F91118Cae80868D1F1Fd3f18 \
-  BASE_ESCROW_DEPLOYMENT_BLOCK=48282047 \
+fly secrets set CONTRACT_ADDRESS=0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641 \
+  GENLAYER_CONTRACT_ADDRESS=0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641 \
+  BASE_ESCROW_ADDRESS=0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b \
+  BASE_ESCROW_DEPLOYMENT_BLOCK=48283907 \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=<throwaway-relayer-key> \
   SETTLEMENT_SIGNER_URL=http://eventweaver-settlement-authority.internal:8080 \
   SETTLEMENT_SIGNER_TOKEN=<shared-api-token> \
@@ -68,11 +68,11 @@ resolver, and settlement relay poll every five minutes to stay below the shared 
 
 ```bash
 cd frontend
-vercel --prod \
-  -e VITE_API_URL=https://eventweaver-api-v2.fly.dev \
-  -e VITE_CONTRACT_ADDRESS=0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f \
-  -e VITE_BASE_ESCROW_ADDRESS=0xd1c6864eCE3f06B1a18932905ab816635726040c \
-  -e VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
+vercel deploy --prod --yes \
+  -b VITE_API_URL=https://eventweaver-api-v2.fly.dev \
+  -b VITE_CONTRACT_ADDRESS=0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641 \
+  -b VITE_BASE_ESCROW_ADDRESS=0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b \
+  -b VITE_BASE_SEPOLIA_USDC=0x036CbD53842c5426634e7929541eC2318f3dCF7e
 ```
 
 SPA rewrites are configured in `vercel.json`. Vercel Analytics is wired via
@@ -113,8 +113,8 @@ authority verifies that exact successful, final GenVM transaction before signing
 
 ## 6. Canonical production deployment
 
-The currently reviewed pair is GenLayer `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f`
-with Base escrow `0xd1c6864eCE3f06B1a18932905ab816635726040c`. Deployment transactions,
+The currently reviewed pair is GenLayer `0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641`
+with Base escrow `0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b`. Deployment transactions,
 finalized GenVM receipts, settlement proof, and before/after USDC balances are recorded in
 [`REMEDIATION_ACCEPTANCE.md`](../REMEDIATION_ACCEPTANCE.md). The Fly backend and Vercel
 frontend are deployed with this exact pair.

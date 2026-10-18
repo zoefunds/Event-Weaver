@@ -59,7 +59,7 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c)
+[`0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b`](https://sepolia.basescan.org/address/0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
 A stake is only ever recorded off the back of a confirmed on-chain payment — never a
@@ -392,8 +392,8 @@ recovery that blocks stale relay replays (see [REMEDIATION_ACCEPTANCE.md](REMEDI
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x3b1781e005AEEf7ec64A51a8DFA323A16aAa0a6f` (GenLayer StudioNet; deployment tx `0x91820667c008afd59e91aebd5bdd23b1d0623d9024f8c988d2efe70aa22d5f15`) |
-| Base Sepolia USDC escrow | [`0xd1c6864eCE3f06B1a18932905ab816635726040c`](https://sepolia.basescan.org/address/0xd1c6864eCE3f06B1a18932905ab816635726040c) (immutable authority boundary and pending-deposit reserve) |
+| Intelligent Contract | `0xEce2907092e324D0C9DE5fbaBaE20aA65E12C641` (GenLayer StudioNet; deployment tx `0x650616eaf223e46fc671bb3a5a1c04333c8950457c9f3c566006f675f3e6e3b1`) |
+| Base Sepolia USDC escrow | [`0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b`](https://sepolia.basescan.org/address/0xeCb1A2D7A72aF31C0F2F48858A505C3aF8279f4b) (immutable authority boundary and pending-deposit reserve; deployment tx `0xb3017cd54cd744b8afc2293c4d29dad74a2dc3a968558b5a1aec4afdd1379cc3`) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |

@@ -47,7 +47,16 @@ export function assertCanonicalAppliedDeposit({ position, appliedLate, side, amo
   }
 }
 
-export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allowedFunctions, marketId) {
+function receiptTerminalStatus(tx) {
+  for (const receipt of tx?.consensus_data?.leader_receipt ?? []) {
+    const readable = receipt?.result?.payload?.readable ?? '';
+    const match = readable.match(/"status"\s*:\s*"(RESOLVED_YES|RESOLVED_NO|EXPIRED|CANCELLED)"/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allowedFunctions, marketId, terminalStatus) {
   // StudioNet has used two receipt shapes. Older receipts report ACCEPTED
   // with an explicit consensus final flag; current receipts report FINALIZED
   // with an agreed result and a successful leader execution receipt. Accept
@@ -76,6 +85,17 @@ export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allow
   const args = decoded.args ?? decoded.arguments;
   const receiptMarketId = args ? Number(args[0]) : Number(readable.match(/"args"\s*:\s*\[\s*(-?\d+)/)?.[1]);
   if (receiptMarketId !== Number(marketId)) throw new Error('verdict transaction market mismatch');
+  if (!TERMINAL.has(terminalStatus)) throw new Error('market is not terminal');
+  if (functionName === 'request_resolution') {
+    if (receiptTerminalStatus(tx) !== terminalStatus) {
+      throw new Error('resolution receipt does not prove this terminal market status');
+    }
+  } else if ((functionName === 'cancel_market' && terminalStatus !== 'CANCELLED')
+      || (functionName === 'expire_market' && terminalStatus !== 'EXPIRED')) {
+    throw new Error('terminal market status does not match the submitted transaction');
+  } else if (functionName === 'check_step') {
+    throw new Error('single-step receipts cannot prove a terminal market transition');
+  }
 }
 
 export function assertCanonicalSettlement({ marketId, market, report, payouts, pool }) {

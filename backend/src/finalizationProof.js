@@ -2,9 +2,19 @@
  * that allows the settlement relay to request an authority signature. The
  * authority independently repeats these checks; this prevents the durable
  * relay ledger from being polluted with an unrelated transaction meanwhile. */
-export const TERMINAL_METHODS = new Set(['request_resolution', 'check_step', 'expire_market', 'cancel_market']);
+export const TERMINAL_METHODS = new Set(['request_resolution', 'expire_market', 'cancel_market']);
+const TERMINAL_STATUSES = new Set(['RESOLVED_YES', 'RESOLVED_NO', 'EXPIRED', 'CANCELLED']);
 
-export function assertFinalizedMarketProof(tx, contractAddress, marketId) {
+function receiptTerminalStatus(tx) {
+  for (const receipt of tx?.consensus_data?.leader_receipt ?? []) {
+    const readable = receipt?.result?.payload?.readable ?? '';
+    const match = readable.match(/"status"\s*:\s*"(RESOLVED_YES|RESOLVED_NO|EXPIRED|CANCELLED)"/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+export function assertFinalizedMarketProof(tx, contractAddress, marketId, terminalStatus) {
   const leaderSucceeded = tx?.consensus_data?.leader_receipt?.some((receipt) =>
     receipt?.execution_result === 'SUCCESS' && receipt?.result?.status === 'return'
   );
@@ -25,5 +35,14 @@ export function assertFinalizedMarketProof(tx, contractAddress, marketId) {
   const args = decoded.args ?? decoded.arguments;
   const txMarketId = args ? Number(args[0]) : Number(readable.match(/"args"\s*:\s*\[\s*(-?\d+)/)?.[1]);
   if (txMarketId !== Number(marketId)) throw new Error('transaction market mismatch');
+  if (!TERMINAL_STATUSES.has(terminalStatus)) throw new Error('market is not terminal');
+  if (method === 'request_resolution') {
+    if (receiptTerminalStatus(tx) !== terminalStatus) {
+      throw new Error('resolution receipt does not prove this terminal market status');
+    }
+  } else if ((method === 'cancel_market' && terminalStatus !== 'CANCELLED')
+      || (method === 'expire_market' && terminalStatus !== 'EXPIRED')) {
+    throw new Error('terminal market status does not match the submitted transaction');
+  }
   return method;
 }

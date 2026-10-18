@@ -101,11 +101,11 @@ router.post('/api/markets/:id/finalization-proof', asyncRoute(async (req, res) =
     return res.status(400).json({ error: 'valid market id and finalized transaction hash required' });
   }
   const tx = await getTransaction(txHash);
-  const method = assertFinalizedMarketProof(tx, config.contractAddress, marketId);
   const market = plain(await readContract('get_market', [marketId]));
   if (!['RESOLVED_YES', 'RESOLVED_NO', 'EXPIRED', 'CANCELLED'].includes(market.status)) {
     return res.status(409).json({ error: 'market is not terminal yet' });
   }
+  const method = assertFinalizedMarketProof(tx, config.contractAddress, marketId, market.status);
   await setSyncState(`resolutionTx:${marketId}`, txHash.toLowerCase());
   res.status(202).json({ marketId, txHash: txHash.toLowerCase(), method, status: market.status });
 }));

@@ -6,31 +6,32 @@ const contract = '0x1111111111111111111111111111111111111111';
 const recipient = '0x2222222222222222222222222222222222222222';
 const acceptedTx = {
   statusName: 'ACCEPTED', txExecutionResultName: 'SUCCESS', consensus_data: { final: true },
-  to_address: contract, txDataDecoded: { functionName: 'request_resolution', args: [7] },
+  to_address: contract, txDataDecoded: { functionName: 'cancel_market', args: [7] },
 };
 
 test('pending, unsuccessful, wrong-contract and wrong-market verdict transactions are rejected', () => {
-  assert.doesNotThrow(() => assertFinalizedSuccessfulTransaction(acceptedTx, contract, ['request_resolution'], 7));
+  assert.doesNotThrow(() => assertFinalizedSuccessfulTransaction(acceptedTx, contract, ['cancel_market'], 7, 'CANCELLED'));
   for (const mutation of [
     { statusName: 'PENDING' }, { txExecutionResultName: 'ERROR' }, { consensus_data: { final: false } },
-    { to_address: recipient }, { txDataDecoded: { functionName: 'request_resolution', args: [8] } },
-  ]) assert.throws(() => assertFinalizedSuccessfulTransaction({ ...acceptedTx, ...mutation }, contract, ['request_resolution'], 7));
+    { to_address: recipient }, { txDataDecoded: { functionName: 'cancel_market', args: [8] } },
+  ]) assert.throws(() => assertFinalizedSuccessfulTransaction({ ...acceptedTx, ...mutation }, contract, ['cancel_market'], 7, 'CANCELLED'));
 });
 
 test('accepts the current StudioNet finalized receipt shape only with a successful majority leader result', () => {
   const finalizedTx = {
     statusName: 'FINALIZED', result_name: 'MAJORITY_AGREE', to_address: contract,
     data: { calldata: { readable: '{"args":[7,]"method":"request_resolution"}' } },
-    consensus_data: { leader_receipt: [{ execution_result: 'SUCCESS', result: { status: 'return' } }] },
+    consensus_data: { leader_receipt: [{ execution_result: 'SUCCESS', result: { status: 'return', payload: { readable: '{"id":7"status":"RESOLVED_YES"}' } } }] },
   };
-  assert.doesNotThrow(() => assertFinalizedSuccessfulTransaction(finalizedTx, contract, ['request_resolution'], 7));
+  assert.doesNotThrow(() => assertFinalizedSuccessfulTransaction(finalizedTx, contract, ['request_resolution'], 7, 'RESOLVED_YES'));
   assert.throws(() => assertFinalizedSuccessfulTransaction(
-    { ...finalizedTx, result_name: 'NO_MAJORITY' }, contract, ['request_resolution'], 7
+    { ...finalizedTx, result_name: 'NO_MAJORITY' }, contract, ['request_resolution'], 7, 'RESOLVED_YES'
   ));
   assert.throws(() => assertFinalizedSuccessfulTransaction(
     { ...finalizedTx, data: { calldata: { readable: '{"args":[8,]"method":"request_resolution"}' } } },
-    contract, ['request_resolution'], 7
+    contract, ['request_resolution'], 7, 'RESOLVED_YES'
   ));
+  assert.throws(() => assertFinalizedSuccessfulTransaction(finalizedTx, contract, ['request_resolution'], 7, 'RESOLVED_NO'));
 });
 
 test('fabricated verdicts and altered payout instructions are rejected', () => {
