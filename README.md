@@ -351,7 +351,7 @@ cd frontend && vercel deploy --prod
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
 | Schema extraction | verified against the pinned runner SDK | 34 methods |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **31 passing** |
+| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **40 passing** |
 | Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
