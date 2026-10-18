@@ -14,8 +14,8 @@ through an external escrow while GenLayer stores positions and computes final al
 
 ## Architecture decisions (confirmed by owner)
 - **Adjudication policy**: staking open to all until deadline; pre-deadline step checks restricted to market creator/platform owner; post-deadline adjudication permissionless AND auto-triggered by the backend resolver (`backend/src/resolver.js`, RESOLVER_PRIVATE_KEY optional).
-- **Contract**: `contracts/event_weaver.py`, deployed to StudioNet at `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F`.
-- **USDC custody**: `contracts/base/EventWeaverEscrow.sol`, deployed on Base Sepolia at `0xF53f14aAed565BfA276598e02943DFed69217705`, using test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **Contract**: `contracts/event_weaver.py`, deployed to StudioNet at `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`.
+- **USDC custody**: `contracts/base/EventWeaverEscrow.sol`, deployed on Base Sepolia at `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`, using test USDC `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 - **Constructor args**: `min_creation_bond=0`, `min_stake=0` for StudioNet.
 - **Backend**: Node/Express indexer + API on **Fly.io**, 24/7 (`auto_stop_machines=off`, `min_machines_running=1`, restart policy). Database: **Fly Postgres**.
 - **Frontend**: **Vite + React + Tailwind**, deployed to **Vercel**, with Vercel Analytics.
@@ -28,7 +28,7 @@ through an external escrow while GenLayer stores positions and computes final al
 1. The wallet approves test USDC and calls Base escrow `stake(market_id, side, amount)`.
 2. The relay records each confirmed `Staked` log using `txHash:logIndex`; only the relay can call GenLayer `record_stake`.
 3. On terminal resolution, the backend builds the canonical payout commitment and an independent authority signs it before the relayer calls `settle`.
-4. A deposit applied after settlement receives an independently signed `allocateLateRefund` allocation.
+4. A deposit that cannot be applied receives an independently signed `allocateDepositRefund` allocation bound to its original event-specific deposit id.
 5. Each allocated wallet calls `claim(market_id)` to receive USDC directly.
 
 ## Hard-won GenLayer gotchas (do not re-learn these)
@@ -46,8 +46,8 @@ through an external escrow while GenLayer stores positions and computes final al
 - **GenLayer contracts are immutable.** A fix means a new contract, new matched escrow, and synchronized Fly/Vercel configuration. When markets appear missing, compare `/health`, `/api/config`, the frontend bundle and on-chain `get_market_count` for the exact canonical address.
 
 ## Deployed state (live)
-- **GenLayer V1 contract**: `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F`.
-- **Base Sepolia escrow**: `0xF53f14aAed565BfA276598e02943DFed69217705`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
+- **GenLayer V1 contract**: `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`.
+- **Base Sepolia escrow**: `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`; test USDC: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 - **Backend**: https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`). Secrets include the contract/escrow configuration and separate relayer and settlement-authority keys.
 - **Frontend**: https://eventweaver-orpin.vercel.app (Vercel project `eventweaver`; env `VITE_API_URL`, `VITE_CONTRACT_ADDRESS`, `VITE_BASE_ESCROW_ADDRESS`, `VITE_BASE_SEPOLIA_USDC`).
 - **Repo**: https://github.com/zoefunds/Event-Weaver (main; GitHub Actions CI: contract lint + backend check + frontend build).

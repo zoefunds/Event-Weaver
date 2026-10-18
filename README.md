@@ -59,7 +59,7 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0xF53f14aAed565BfA276598e02943DFed69217705`](https://sepolia.basescan.org/address/0xF53f14aAed565BfA276598e02943DFed69217705)
+[`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
 A stake is only ever recorded off the back of a confirmed on-chain payment — never a
@@ -89,10 +89,11 @@ steps 2 and 3 below) is recovered automatically rather than stranded:
 4. Winners call escrow `claim(marketId)` directly; the backend never custody-transfers funds.
 
 Set `VITE_BASE_ESCROW_ADDRESS` in the frontend and `BASE_ESCROW_ADDRESS` /
-`BASE_SEPOLIA_RELAYER_PRIVATE_KEY` and `SETTLEMENT_AUTHORITY_PRIVATE_KEY` in the backend before
-running the full flow. The relayer address must match the escrow and GenLayer relayer roles;
-the independent authority address must match `EventWeaverEscrow.settlementAuthority()`. Never
-reuse one key for both roles.
+`BASE_SEPOLIA_RELAYER_PRIVATE_KEY` in the backend before running the full flow. The backend
+uses `SETTLEMENT_SIGNER_URL` and `SETTLEMENT_SIGNER_TOKEN` to call the separately deployed
+authority service; the authority private key must never be present in the backend. The relayer
+address must match the escrow and GenLayer relayer roles, and the authority address must match
+`EventWeaverEscrow.settlementAuthority()`.
 
 Full writeup of the confirmed-payment and crash-recovery fix — problem, root cause, fix, and
 tests — is in **[review-v1.md](review-v1.md)**. For the complete V1 migration record,
@@ -311,7 +312,8 @@ Environment (see `.env.example` in each package):
 | --- | --- | --- |
 | backend | `CONTRACT_ADDRESS` | EventWeaver contract on StudioNet |
 | backend | `DATABASE_URL` | Postgres (optional locally) |
-| backend | `BASE_ESCROW_ADDRESS`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY`, `SETTLEMENT_AUTHORITY_PRIVATE_KEY` | Escrow, transaction relayer, and a separate authority that signs canonical GenLayer payout commitments |
+| backend | `BASE_ESCROW_ADDRESS`, `BASE_ESCROW_DEPLOYMENT_BLOCK`, `BASE_SEPOLIA_RELAYER_PRIVATE_KEY` | Escrow, historical scan origin, and transaction-only relayer |
+| backend | `SETTLEMENT_SIGNER_URL`, `SETTLEMENT_SIGNER_TOKEN` | authenticated connection to the separately deployed verification/signing service |
 | backend | `BASE_SEPOLIA_STAKE_CONFIRMATIONS` | blocks to wait before treating a deposit as final (default 5) |
 | backend | `POLL_INTERVAL_MS`, `RESOLVER_INTERVAL_MS` | rate-safe ops tuning |
 | frontend | `VITE_API_URL` | backend base URL |
@@ -323,7 +325,7 @@ Environment (see `.env.example` in each package):
 Full guide: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Short version:
 
 ```bash
-# 1. Escrow → Base Sepolia (constructor: usdc address, relayer address)
+# 1. Escrow → Base Sepolia (constructor: USDC, relayer, authority, GenLayer contract)
 #    deploy EventWeaverEscrow.sol with the relayer key's address as `relayer_`
 
 # 2. Contract → GenLayer StudioNet (constructor: min_creation_bond=0, min_stake=0)
@@ -339,7 +341,9 @@ fly secrets set \
   CONTRACT_ADDRESS=0x… \
   BASE_ESCROW_ADDRESS=0x… \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=0x… \
-  SETTLEMENT_AUTHORITY_PRIVATE_KEY=0x… \
+  BASE_ESCROW_DEPLOYMENT_BLOCK=0x… \
+  SETTLEMENT_SIGNER_URL=http://eventweaver-settlement-authority.internal:8080 \
+  SETTLEMENT_SIGNER_TOKEN=… \
   CORS_ORIGINS=https://your-app.vercel.app
 
 # 4. Frontend → Vercel
@@ -356,7 +360,10 @@ cd frontend && vercel deploy --prod
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
 | Schema extraction | verified against the pinned runner SDK | complete |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **40 passing** |
+| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **44 passing** |
+| Solidity escrow tests | `forge test -vv` | **8 passing** |
+| Backend relay tests | `cd backend && npm test` | **2 passing** |
+| Authority verification tests | `cd authority && npm test` | **2 passing** |
 | Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
@@ -373,8 +380,8 @@ the same `txHash:logIndex` deposit id (the crash-recovery case), and relayer rot
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F` (GenLayer StudioNet; financial-remediation commits `6d7c0fc`, `86ed043`) |
-| Base Sepolia USDC escrow | [`0xF53f14aAed565BfA276598e02943DFed69217705`](https://sepolia.basescan.org/address/0xF53f14aAed565BfA276598e02943DFed69217705) (authority-bound settlement and late-refund reserve) |
+| Intelligent Contract | `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3` (GenLayer StudioNet; deployment tx `0xafa30cc2bbfd7a360a980e8a12386ac5c1fd4b09cecedc8d3fd55ded89255449`) |
+| Base Sepolia USDC escrow | [`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD) (authority-bound settlement and pending-deposit reserve) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |

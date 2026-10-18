@@ -1,56 +1,103 @@
-# Financial Remediation & Live Acceptance Evidence
+# Financial Remediation and Live Acceptance Evidence
 
-Date: 2026-10-18  
-Source commits: `6d7c0fc` (financial hardening) and `86ed043` (mandatory event-time validation). Canonical public branch: `main`.
+Date: 2026-10-18. Canonical branch: `main`. This record covers the second financial,
+cross-chain recovery, chronology-consensus, and deployment-consistency remediation.
 
-## Current matched deployment
+## Canonical matched deployment
 
 | Component | Address / identity |
 | --- | --- |
-| GenLayer StudioNet Intelligent Contract | `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F` |
-| Base Sepolia escrow | `0xF53f14aAed565BfA276598e02943DFed69217705` |
-| Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Relayer / E2E wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
-| Independent settlement authority | `0x54351E55350f5414C6a5e2d54Cb9d1fECE3107C9` |
+| GenLayer StudioNet contract | `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3` |
+| Base Sepolia escrow | [`0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`](https://sepolia.basescan.org/address/0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD) |
+| Base Sepolia test USDC | [`0x036CbD53842c5426634e7929541eC2318f3dCF7e`](https://sepolia.basescan.org/address/0x036CbD53842c5426634e7929541eC2318f3dCF7e) |
+| Relayer / deployment wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
+| Independent settlement authority | `0xb26B9762edc49f261Ad9fF26FeF0AD6c43930D01` |
+| Backend | [eventweaver-api-v2.fly.dev](https://eventweaver-api-v2.fly.dev) |
+| Frontend | [eventweaver-orpin.vercel.app](https://eventweaver-orpin.vercel.app) |
 
-Deployment transactions:
+The escrow constructor permanently binds the USDC token, relayer, independent authority,
+and canonical GenLayer contract. Its deployment block is `48278617`.
 
-- GenLayer deployment: `0x2014c19dab266249099cab8c5a92628298fe18c537349a4a140674747716dcb5`; finalized `ACCEPTED`, `MAJORITY_AGREE`, unanimous 5/5 AGREE, leader GenVM execution `SUCCESS`.
-- Base escrow deployment: [`0xa94f7df17b7ae0eb9ca6c55e0fc3c472c8636e57ee5ba91d340d7e9e16328859`](https://sepolia.basescan.org/tx/0xa94f7df17b7ae0eb9ca6c55e0fc3c472c8636e57ee5ba91d340d7e9e16328859).
+Deployment evidence:
 
-## Complete live transaction sequence
+- GenLayer deployment `0xafa30cc2bbfd7a360a980e8a12386ac5c1fd4b09cecedc8d3fd55ded89255449`:
+  `ACCEPTED`, `MAJORITY_AGREE`, five commits, five reveals, and five AGREE votes; every GenVM
+  execution receipt reported `SUCCESS`.
+- Base deployment [`0x356aab7f3e63e68c67f992b05620b9371b0d9aab40fcac9544186479d9f25969`](https://sepolia.basescan.org/tx/0x356aab7f3e63e68c67f992b05620b9371b0d9aab40fcac9544186479d9f25969).
+- Vercel production deployment `dpl_ywLE56b5xz2yRif69JvYqrCmRDrK` is aliased to the
+  public frontend. Public backend `/health` and `/api/config` report the same GenLayer address.
+- The authority runs as a separate Fly application. The backend contains no authority private
+  key; it has only a private service URL and bearer token. The obsolete backend key secret was removed.
 
-The live market was "Final E2E: Bitcoin chronology". It required the Bitcoin genesis block (2009-01-03) to precede the first halving (2012-11-28).
+## Live YES outcome with losing-pool distribution
 
-1. Market creation: GenLayer tx `0x6789f02287c8efef038420a6f6367b40ff1d1662c4d7115b0dd320e1806187b8`; `ACCEPTED`, 3 AGREE / 2 IDLE.
-2. USDC approval: [`0x28cf65c1fa29a72e96c24547205e31a5a25f0fafcbcd4a74a998c660d8c0f142`](https://sepolia.basescan.org/tx/0x28cf65c1fa29a72e96c24547205e31a5a25f0fafcbcd4a74a998c660d8c0f142).
-3. 0.100000 USDC deposit: [`0x97207761e1cadf26ac6bb142bc89ea4a8322508069357f6443577c6b625daede`](https://sepolia.basescan.org/tx/0x97207761e1cadf26ac6bb142bc89ea4a8322508069357f6443577c6b625daede), `Staked` log index 8, deposit id `0x972077...daede:8`.
-4. GenLayer stake recording: `0xe02caf6b91dace91ce0b719b8f62dc713ff2c56bf4bc4d5fb262763369785744`; `ACCEPTED`, 3 AGREE / 2 IDLE, leader GenVM execution `SUCCESS`.
-5. Validator adjudication: `0xdd239609b829fe66c62fada29d8c189a79ea6b2e2b754f465ac7b2a6701dfb3e`; finalized `RESOLVED_YES`, `MAJORITY_AGREE`, 3 AGREE / 2 IDLE in the final round. Both steps were fulfilled at 100% confidence with `occurred_at_ts=1230940800` then `1354060800`, proving the required chronology.
-6. Authority-bound Base settlement: [`0xcf48e07a7119258c88746c5d5d975bf4f62c996cefe96ddcd3519893bd66dc7c`](https://sepolia.basescan.org/tx/0xcf48e07a7119258c88746c5d5d975bf4f62c996cefe96ddcd3519893bd66dc7c). The signed commitment binds chain id, escrow, market id, full recipient/amount hash, GenLayer verdict tx hash, and deposited pool size.
-7. Recipient withdrawal: [`0x232d07e711c92ad6368b0f18d325d8f45d38496f29af23028fce6ef339a7983a`](https://sepolia.basescan.org/tx/0x232d07e711c92ad6368b0f18d325d8f45d38496f29af23028fce6ef339a7983a). Wallet USDC changed from `121400000` to `121500000` base units: exactly +0.100000 USDC. Claimable changed from `100000` to `0`.
+Market 0 verifies the Bitcoin genesis-to-first-halving chronology.
 
-## Corrections mapped to findings
+1. Creation: GenLayer `0xfcebdee911689807c85d5bea8a0439800902508e724a165a06bb237b6ea9ef40`,
+   accepted with five validator commitments and reveals.
+2. Authenticated Base registration: [`0x9306f301a6288a356c66a09d8eb94600b732d6d22e0211e22c59383b237cf8c0`](https://sepolia.basescan.org/tx/0x9306f301a6288a356c66a09d8eb94600b732d6d22e0211e22c59383b237cf8c0).
+3. YES 0.200000 USDC: [`0xf128b0ff69204c5c5709eb24c1f1b2f371cfbbb3ae14b1977b872219708e4c18`](https://sepolia.basescan.org/tx/0xf128b0ff69204c5c5709eb24c1f1b2f371cfbbb3ae14b1977b872219708e4c18),
+   log index 47, deposit id `txHash:47`.
+4. NO 0.100000 USDC from a distinct wallet:
+   [`0x41548069976a5dbff011e9cbe962c760240ba8361b9b9d343732676ec1ba8973`](https://sepolia.basescan.org/tx/0x41548069976a5dbff011e9cbe962c760240ba8361b9b9d343732676ec1ba8973),
+   log index 82, deposit id `txHash:82`.
+5. Base acknowledgements after successful GenLayer registration:
+   [`0xd6f0ce787958eed2702a1bf473bb8852312b4c7312adb2d9625f8345a2823dd9`](https://sepolia.basescan.org/tx/0xd6f0ce787958eed2702a1bf473bb8852312b4c7312adb2d9625f8345a2823dd9)
+   and [`0x0f38e5ef934c476432ca5d319fb4508ebe8d2df739a67d636a0c88270238a7bb`](https://sepolia.basescan.org/tx/0x0f38e5ef934c476432ca5d319fb4508ebe8d2df739a67d636a0c88270238a7bb).
+   Pool state before adjudication was deposited `300000`, pending `0`.
+6. Adjudication: GenLayer `0x7cec0352a6e67a5f18510c2b3d187fb8f45e48c2ae67868148493468e89f9796`,
+   `MAJORITY_AGREE`, five commits/reveals. Result `RESOLVED_YES`; both events were verified at
+   UTC dates 2009-01-03 and 2012-11-28 with 100% confidence.
+7. Canonical payout: 0.298500 USDC to the YES wallet. Authority-signed Base settlement:
+   [`0xccfe354fd476706dd2f9e0afad9739eccddaa94f466730bde30dd3e239a76ddd`](https://sepolia.basescan.org/tx/0xccfe354fd476706dd2f9e0afad9739eccddaa94f466730bde30dd3e239a76ddd).
+8. Withdrawal: [`0xb6ba6a82a0ec2daadfa0163cc026cc0ad46867b0b0a7c82e955d8483b260f9be`](https://sepolia.basescan.org/tx/0xb6ba6a82a0ec2daadfa0163cc026cc0ad46867b0b0a7c82e955d8483b260f9be).
+   Recipient balance changed from `121.100000` to `121.398500` USDC; claimable changed from
+   `0.298500` to zero.
 
-- **Custody:** the unsafe `withdrawUnallocated` function no longer exists. Active pools cannot be withdrawn. Post-settlement surplus requires an independent, nonce-bound authority signature and cannot consume `allocated` user entitlements.
-- **Settlement authentication:** `settle` verifies the independent authority signature over the complete payout and finalized-verdict commitment. A relayer cannot change a recipient, amount, market, verdict, pool size, chain, or escrow address.
-- **Late finality:** `allocateLateRefund` is independently signed, deposit-idempotent, increases protected allocation, and works after the one-time settlement. The relay queries GenLayer's deposit-specific `is_stake_late` state and retries safely.
-- **Event identity:** the relay, PostgreSQL primary key, API, and GenLayer idempotency map all use `txHash:logIndex`. The migration preserves legacy rows as log index 0.
-- **Empty winning side:** every participant receives principal back and no fee accrues; terminal payouts are never left empty when funded positions exist.
-- **Fee snapshot:** protocol and creator basis points are copied into each market at creation and every quote, claim, payout, and accrual uses that snapshot.
-- **Chronology:** validators return an evidence-backed `occurred_at_ts`; later steps are rejected with a deterministic chronology violation when their event time is not strictly later.
+## Live NO outcome
+
+Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin genesis block.
+
+- Creation: GenLayer `0xaa3c0faa2b017ed9417e950cf7961f8195aba3915f4cdaab77f319e1245ecf05`.
+- YES 0.100000 USDC: [`0x77048ef85c9caffdbe55ff36102af994f3dc452e4966e140d9c3fd10479d8fbf`](https://sepolia.basescan.org/tx/0x77048ef85c9caffdbe55ff36102af994f3dc452e4966e140d9c3fd10479d8fbf), log 9.
+- NO 0.100000 USDC: [`0xf732d76666ce4313194a5371069cb61f9087bd7977c4aeecbd9a2ff9be370ca2`](https://sepolia.basescan.org/tx/0xf732d76666ce4313194a5371069cb61f9087bd7977c4aeecbd9a2ff9be370ca2), log 99.
+- Adjudication: GenLayer `0xa057ffb567e769601e48b5737fc30be17a50f5a6d2ac1b2c551cbe2159e60bd9`,
+  `MAJORITY_AGREE`, five commits/reveals, result `RESOLVED_NO` with 95% confidence.
+- Canonical NO payout: 0.198500 USDC. Settlement:
+  [`0xbd9e8d8837c60ec5620510038aac0f291c3f50b3458ae09c6bed0c03051ab0ff`](https://sepolia.basescan.org/tx/0xbd9e8d8837c60ec5620510038aac0f291c3f50b3458ae09c6bed0c03051ab0ff).
+- Withdrawal: [`0xf675a3e7f62be8058f7509fc5a575503ef6b0a9352197c086fa17a15e7c44bb5`](https://sepolia.basescan.org/tx/0xf675a3e7f62be8058f7509fc5a575503ef6b0a9352197c086fa17a15e7c44bb5).
+  Recipient balance changed from zero to `0.198500` USDC; claimable changed to zero.
+
+## Adverse-path evidence and policy
+
+- Unknown market deposits revert before `transferFrom`; tests confirm balances remain unchanged.
+- Base market registration is authority-signed and binds chain, escrow, GenLayer contract,
+  market id, and canonical market hash.
+- The authority independently rejects pending/unsuccessful receipts, fabricated verdicts,
+  wrong contract/market identities, and altered allocations.
+- Pending deposits are escrow liabilities. Settlement and surplus withdrawal require
+  `pending == 0`; signed acknowledgements or refunds consume each deposit exactly once.
+- Relay recovery starts from deployment block `48278617`, not a recent rolling window.
+- A two-instance race was observed live and handled idempotently: one instance acknowledged a
+  deposit while the other re-read `handledDeposit` and completed without retry noise.
+- Pause does not block servicing confirmed financial obligations or late-refund recovery.
+- Event deadlines govern occurrence; a separate seven-day verification window permits delayed
+  evidence. Validators agree on the decision-critical UTC date and deadline side.
+- Fee values are snapshotted at creation. Quote and settlement use the same snapshot and the
+  same empty-winning-side principal-refund policy.
+- Archived cancellation proof: settlement `0x6a9c6daa72e3426105e48655d87b3e78243b97f2d3ce1a4b8e95da3cf540a5d6`;
+  withdrawal `0xfa95382efb430a897fa12d8f71cf8bff2165e1ab549502a06c159539880556e6`.
 
 ## Reproducible verification
 
-- `pytest -q tests/direct`: **40 passed**.
-- `forge test --match-path test/EventWeaverEscrow.t.sol`: **5 passed**.
-- `cd backend && npm test`: **1 passed**.
+- `pytest -q tests/direct`: **44 passed**.
+- `forge test -vv`: **8 passed**.
+- `cd backend && npm test`: **2 passed**.
+- `cd authority && npm test`: **2 passed**.
 - `genvm-lint lint contracts/event_weaver.py`: **3 checks passed**.
-- `cd frontend && npm run build`: successful production build.
+- `cd frontend && npm run lint && npm run build`: successful with only documented warnings.
 
-Production verification on 2026-10-18 confirmed both Fly machines healthy, `/health` and
-`/api/config` reporting the canonical GenLayer contract, production CORS accepting the Vercel
-origin, and the deployed Vercel bundle containing the canonical API, GenLayer, escrow and USDC
-values with no superseded contract address.
-
-The Solidity suite covers active-custody withdrawal resistance, altered-relayer allocations, settlement without authority verdict, post-settlement late refunds and same-transaction multiple stake logs. Direct GenLayer tests cover fee snapshots, empty-winning-side refunds, contradictory real-world chronology, SDK-decoded addresses, and `txHash:logIndex` idempotency.
+The suites cover protected custody, unknown markets, pending-liability reserve, authenticated
+settlement, altered allocations, replay resistance, multiple logs per transaction, UTC-date
+reversal, verification grace, pause recovery, late deposits, immutable fees, empty sides,
+historical relay recovery, event-specific idempotency, and the complete signing boundary.

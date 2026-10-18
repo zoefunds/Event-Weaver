@@ -40,7 +40,7 @@ Wallet on Base Sepolia ----------------+-- USDC approve, escrow stake, claim
 1. The frontend submits `create_market` to GenLayer.
 2. To stake, the wallet deposits USDC into Base escrow. After confirmations, the backend records that exact `Staked` event on GenLayer using `txHash:logIndex` as its idempotency key.
 3. The backend resolver requests adjudication when a market is due. Validators fetch the configured public evidence and the GenLayer contract finalizes the market.
-4. The relayer reads `get_base_payouts`; the independent authority signs the canonical verdict/allocation commitment, and the relayer submits the one-time Base `settle` call. A deposit applied after settlement is recovered through separately signed `allocateLateRefund`.
+4. The independent authority reads the finalized GenLayer verdict/payout and Base pool itself, signs the canonical commitment, and the relayer submits the one-time Base `settle` call. A deposit that cannot be applied is recovered through separately signed `allocateDepositRefund`.
 5. The recipient calls `claim`. The escrow transfers USDC directly to that wallet.
 
 ## Read path and rate-limit posture

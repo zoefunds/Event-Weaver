@@ -10,7 +10,7 @@ The current cross-chain recovery path is:
 3. GenLayer marks deposits arriving outside the staking window as late without adding them to
    either market pool.
 4. If Base settlement already occurred, the independent authority signs a deposit-specific
-   refund and the relayer calls `allocateLateRefund`.
+   refund and the relayer calls the authority-signed `allocateDepositRefund` path.
 5. Replays are harmless on both chains.
 
 See [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md) for the current deployment and proof.

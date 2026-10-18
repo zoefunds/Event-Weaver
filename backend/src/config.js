@@ -4,7 +4,7 @@ import 'dotenv/config';
 export const config = {
   port: parseInt(process.env.PORT ?? '8080', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F',
+  contractAddress: process.env.CONTRACT_ADDRESS ?? '0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3',
   // StudioNet's shared RPC is capped at 500 reads/hour. Five minutes keeps
   // indexing, resolution, and settlement well below that budget.
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS ?? '300000', 10),
@@ -14,7 +14,7 @@ export const config = {
   baseSepolia: {
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
     usdcAddress: process.env.BASE_SEPOLIA_USDC ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0xF53f14aAed565BfA276598e02943DFed69217705',
+    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD',
     escrowDeploymentBlock: parseInt(process.env.BASE_ESCROW_DEPLOYMENT_BLOCK ?? '0', 10),
     // Transaction-only key: submits confirmed deposits to GenLayer and
     // authority-approved payloads to Base. It cannot produce authority

@@ -68,14 +68,25 @@ export async function acknowledgeBaseDeposit(row, logger) {
   const escrow = contract();
   const depositHash = keccak256(toUtf8Bytes(row.deposit_id));
   if (await escrow.handledDeposit(depositHash)) return true;
-  const authorization = await authorizeDepositAcknowledgement(row);
-  const tx = await escrow.acknowledgeDeposit(
-    Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
-    authorization.applicationHash, authorization.signature
-  );
-  const receipt = await tx.wait();
-  if (!receipt || receipt.status !== 1) throw new Error(`deposit acknowledgement failed for ${row.deposit_id}`);
-  logger.info({ depositId: row.deposit_id, txHash: tx.hash }, 'acknowledged GenLayer-applied Base deposit');
+  try {
+    const authorization = await authorizeDepositAcknowledgement(row);
+    const tx = await escrow.acknowledgeDeposit(
+      Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
+      authorization.applicationHash, authorization.signature
+    );
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) throw new Error(`deposit acknowledgement failed for ${row.deposit_id}`);
+    logger.info({ depositId: row.deposit_id, txHash: tx.hash }, 'acknowledged GenLayer-applied Base deposit');
+  } catch (error) {
+    // Multiple relay instances can observe the same pending row. If another
+    // instance handled it between our first read and signing/submission, the
+    // desired on-chain state is already reached and this retry is successful.
+    if (await escrow.handledDeposit(depositHash)) {
+      logger.info({ depositId: row.deposit_id }, 'Base deposit was already handled by another relay');
+      return true;
+    }
+    throw error;
+  }
   return true;
 }
 
@@ -83,14 +94,22 @@ export async function relayDepositRefund(row, reason, logger) {
   const escrow = contract();
   const depositHash = keccak256(toUtf8Bytes(row.deposit_id));
   if (await escrow.handledDeposit(depositHash)) return true;
-  const authorization = await authorizeDepositRefund(row, reason);
-  const tx = await escrow.allocateDepositRefund(
-    Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
-    authorization.reasonHash, authorization.signature
-  );
-  const receipt = await tx.wait();
-  if (!receipt || receipt.status !== 1) throw new Error(`deposit refund allocation failed for ${row.deposit_id}`);
-  logger.info({ depositId: row.deposit_id, txHash: tx.hash, reason }, 'deposit refund allocated on Base');
+  try {
+    const authorization = await authorizeDepositRefund(row, reason);
+    const tx = await escrow.allocateDepositRefund(
+      Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
+      authorization.reasonHash, authorization.signature
+    );
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) throw new Error(`deposit refund allocation failed for ${row.deposit_id}`);
+    logger.info({ depositId: row.deposit_id, txHash: tx.hash, reason }, 'deposit refund allocated on Base');
+  } catch (error) {
+    if (await escrow.handledDeposit(depositHash)) {
+      logger.info({ depositId: row.deposit_id }, 'Base deposit refund was already handled by another relay');
+      return true;
+    }
+    throw error;
+  }
   return true;
 }
 

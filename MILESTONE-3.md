@@ -9,8 +9,8 @@ proof and test results are recorded in [REMEDIATION_ACCEPTANCE.md](REMEDIATION_A
 
 The active system uses:
 
-- GenLayer StudioNet: `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F`
-- Base Sepolia escrow: `0xF53f14aAed565BfA276598e02943DFed69217705`
+- GenLayer StudioNet: `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`
+- Base Sepolia escrow: `0xe9edA1549aFcaCB073C86668f84E2A619F4f50cD`
 - Backend: https://eventweaver-api-v2.fly.dev
 - Frontend: https://eventweaver-orpin.vercel.app
 
