@@ -1,34 +1,34 @@
 # Financial Remediation & Live Acceptance Evidence
 
 Date: 2026-10-18  
-Source commit: `6d7c0fc` (`fix: harden cross-chain settlement and custody`)
+Source commits: `6d7c0fc` (financial hardening) and `86ed043` (mandatory event-time validation)
 
 ## Current matched deployment
 
 | Component | Address / identity |
 | --- | --- |
-| GenLayer StudioNet Intelligent Contract | `0x2810D77Eb436054d843431A76f5F7883Bc8E6927` |
-| Base Sepolia escrow | `0x92078A23863aE5D79594B3F517B44F295cc494a6` |
+| GenLayer StudioNet Intelligent Contract | `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F` |
+| Base Sepolia escrow | `0xF53f14aAed565BfA276598e02943DFed69217705` |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Relayer / E2E wallet | `0x7401c129EDfc26E68FE19309fE461eb3Db1058Eb` |
 | Independent settlement authority | `0x54351E55350f5414C6a5e2d54Cb9d1fECE3107C9` |
 
 Deployment transactions:
 
-- GenLayer deployment: `0xdee8aafc29d2ac338fe6596ab94f206a72eb142454d85cb885dee1653c5aac36`; finalized `ACCEPTED`, `MAJORITY_AGREE`, 3 AGREE / 2 IDLE, leader GenVM execution `SUCCESS`.
-- Base escrow deployment: [`0x9b69e345cc9dde6625f408c4678de73b27abb1e5b2135ed2e5df0bcbf372b539`](https://sepolia.basescan.org/tx/0x9b69e345cc9dde6625f408c4678de73b27abb1e5b2135ed2e5df0bcbf372b539).
+- GenLayer deployment: `0x2014c19dab266249099cab8c5a92628298fe18c537349a4a140674747716dcb5`; finalized `ACCEPTED`, `MAJORITY_AGREE`, unanimous 5/5 AGREE, leader GenVM execution `SUCCESS`.
+- Base escrow deployment: [`0xa94f7df17b7ae0eb9ca6c55e0fc3c472c8636e57ee5ba91d340d7e9e16328859`](https://sepolia.basescan.org/tx/0xa94f7df17b7ae0eb9ca6c55e0fc3c472c8636e57ee5ba91d340d7e9e16328859).
 
 ## Complete live transaction sequence
 
-The live market was "Remediation E2E: Bitcoin chronology". It required the Bitcoin genesis block (2009-01-03) to precede the first halving (2012-11-28).
+The live market was "Final E2E: Bitcoin chronology". It required the Bitcoin genesis block (2009-01-03) to precede the first halving (2012-11-28).
 
-1. Market creation: GenLayer tx `0xd24ef49511a09afd2068a8ae459f315efdb114d2f2c1149e3c556a5ddffaeeb7`; `ACCEPTED`, unanimous 5/5 AGREE.
-2. USDC approval: [`0x97550ff5d25f2b1c98bda743d62a487e2291e2847d20b9c5a96758e9703f0d64`](https://sepolia.basescan.org/tx/0x97550ff5d25f2b1c98bda743d62a487e2291e2847d20b9c5a96758e9703f0d64).
-3. 1.000000 USDC deposit: [`0x23058b339b07a082411a665646717dcc06e1866ae63243ba0b4e74e2b60d169b`](https://sepolia.basescan.org/tx/0x23058b339b07a082411a665646717dcc06e1866ae63243ba0b4e74e2b60d169b), `Staked` log index 66, deposit id `0x23058b...d169b:66`.
-4. GenLayer stake recording: `0x979fabb18a7684e931a55f6f917a582f7df036b686cd4017ec3b1f1610a1c595`; `ACCEPTED`, 4 AGREE / 1 IDLE, leader GenVM execution `SUCCESS`.
-5. Validator adjudication: `0x09db4b46b9ffc261abe31cd15468617cd7572e856336a302cb1c1bd0b20d3e50`; finalized `RESOLVED_YES`, `MAJORITY_AGREE`, 3 AGREE / 1 DISAGREE / 1 IDLE. Step 1 was fulfilled at 100% confidence with `occurred_at_ts=1230940800`; step 2 at 95% with `occurred_at_ts=1354060800`, proving the required chronology.
-6. Authority-bound Base settlement: [`0x53a913525e6f81ad30f8fb7d9ca210ab8027a04a510de7698b66998dd287bb07`](https://sepolia.basescan.org/tx/0x53a913525e6f81ad30f8fb7d9ca210ab8027a04a510de7698b66998dd287bb07). The signed commitment binds chain id, escrow, market id, full recipient/amount hash, GenLayer verdict tx hash, and deposited pool size.
-7. Recipient withdrawal: [`0x4e95b09bbb407718cf1959e06f8ead2f602f070c2b5c87d8f9b2f76845c2086d`](https://sepolia.basescan.org/tx/0x4e95b09bbb407718cf1959e06f8ead2f602f070c2b5c87d8f9b2f76845c2086d). Wallet USDC changed from `119500000` to `120500000` base units: exactly +1.000000 USDC. Claimable changed from `1000000` to `0`.
+1. Market creation: GenLayer tx `0x6789f02287c8efef038420a6f6367b40ff1d1662c4d7115b0dd320e1806187b8`; `ACCEPTED`, 3 AGREE / 2 IDLE.
+2. USDC approval: [`0x28cf65c1fa29a72e96c24547205e31a5a25f0fafcbcd4a74a998c660d8c0f142`](https://sepolia.basescan.org/tx/0x28cf65c1fa29a72e96c24547205e31a5a25f0fafcbcd4a74a998c660d8c0f142).
+3. 0.100000 USDC deposit: [`0x97207761e1cadf26ac6bb142bc89ea4a8322508069357f6443577c6b625daede`](https://sepolia.basescan.org/tx/0x97207761e1cadf26ac6bb142bc89ea4a8322508069357f6443577c6b625daede), `Staked` log index 8, deposit id `0x972077...daede:8`.
+4. GenLayer stake recording: `0xe02caf6b91dace91ce0b719b8f62dc713ff2c56bf4bc4d5fb262763369785744`; `ACCEPTED`, 3 AGREE / 2 IDLE, leader GenVM execution `SUCCESS`.
+5. Validator adjudication: `0xdd239609b829fe66c62fada29d8c189a79ea6b2e2b754f465ac7b2a6701dfb3e`; finalized `RESOLVED_YES`, `MAJORITY_AGREE`, 3 AGREE / 2 IDLE in the final round. Both steps were fulfilled at 100% confidence with `occurred_at_ts=1230940800` then `1354060800`, proving the required chronology.
+6. Authority-bound Base settlement: [`0xcf48e07a7119258c88746c5d5d975bf4f62c996cefe96ddcd3519893bd66dc7c`](https://sepolia.basescan.org/tx/0xcf48e07a7119258c88746c5d5d975bf4f62c996cefe96ddcd3519893bd66dc7c). The signed commitment binds chain id, escrow, market id, full recipient/amount hash, GenLayer verdict tx hash, and deposited pool size.
+7. Recipient withdrawal: [`0x232d07e711c92ad6368b0f18d325d8f45d38496f29af23028fce6ef339a7983a`](https://sepolia.basescan.org/tx/0x232d07e711c92ad6368b0f18d325d8f45d38496f29af23028fce6ef339a7983a). Wallet USDC changed from `121400000` to `121500000` base units: exactly +0.100000 USDC. Claimable changed from `100000` to `0`.
 
 ## Corrections mapped to findings
 
@@ -42,7 +42,7 @@ The live market was "Remediation E2E: Bitcoin chronology". It required the Bitco
 
 ## Reproducible verification
 
-- `pytest -q tests/direct`: **38 passed**.
+- `pytest -q tests/direct`: **40 passed**.
 - `forge test --match-path test/EventWeaverEscrow.t.sol`: **5 passed**.
 - `cd backend && npm test`: **1 passed**.
 - `genvm-lint lint contracts/event_weaver.py`: **3 checks passed**.

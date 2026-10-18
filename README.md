@@ -59,7 +59,7 @@ adjudicates outcomes; a Base Sepolia escrow holds deposits and winners self-clai
 ## V1 — USDC on Base Sepolia
 
 The original native-GEN payment path has been replaced. `EventWeaverEscrow` is deployed at
-[`0x92078A23863aE5D79594B3F517B44F295cc494a6`](https://sepolia.basescan.org/address/0x92078A23863aE5D79594B3F517B44F295cc494a6)
+[`0xF53f14aAed565BfA276598e02943DFed69217705`](https://sepolia.basescan.org/address/0xF53f14aAed565BfA276598e02943DFed69217705)
 on Base Sepolia and uses test USDC at `0x036CbD53842c5426634e7929541eC2318f3dCF7e`.
 
 A stake is only ever recorded off the back of a confirmed on-chain payment — never a
@@ -368,8 +368,8 @@ the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
 
 | Component | Where |
 | --- | --- |
-| Intelligent Contract | `0x2810D77Eb436054d843431A76f5F7883Bc8E6927` (GenLayer StudioNet; financial-remediation source commit `6d7c0fc`) |
-| Base Sepolia USDC escrow | [`0x92078A23863aE5D79594B3F517B44F295cc494a6`](https://sepolia.basescan.org/address/0x92078A23863aE5D79594B3F517B44F295cc494a6) (authority-bound settlement and late-refund reserve) |
+| Intelligent Contract | `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F` (GenLayer StudioNet; financial-remediation commits `6d7c0fc`, `86ed043`) |
+| Base Sepolia USDC escrow | [`0xF53f14aAed565BfA276598e02943DFed69217705`](https://sepolia.basescan.org/address/0xF53f14aAed565BfA276598e02943DFed69217705) (authority-bound settlement and late-refund reserve) |
 | Base Sepolia test USDC | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |

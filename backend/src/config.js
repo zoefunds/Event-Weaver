@@ -4,7 +4,7 @@ import 'dotenv/config';
 export const config = {
   port: parseInt(process.env.PORT ?? '8080', 10),
   databaseUrl: process.env.DATABASE_URL ?? '',
-  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x2810D77Eb436054d843431A76f5F7883Bc8E6927',
+  contractAddress: process.env.CONTRACT_ADDRESS ?? '0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F',
   // StudioNet's shared RPC is capped at 500 reads/hour. Five minutes keeps
   // indexing, resolution, and settlement well below that budget.
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS ?? '300000', 10),
@@ -14,7 +14,7 @@ export const config = {
   baseSepolia: {
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org',
     usdcAddress: process.env.BASE_SEPOLIA_USDC ?? '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0x92078A23863aE5D79594B3F517B44F295cc494a6',
+    escrowAddress: process.env.BASE_ESCROW_ADDRESS ?? '0xF53f14aAed565BfA276598e02943DFed69217705',
     // Same key signs both halves of the stake relay: it is the escrow's
     // trusted `relayer` (settle()) and, via createAccount(), the GenLayer
     // contract's trusted `relayer` (record_stake()) — one operational
