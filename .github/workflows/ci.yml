@@ -25,7 +25,7 @@ jobs:
       - run: pytest tests/direct/ -v
 
   backend:
-    name: Backend build
+    name: Backend tests + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,8 +34,29 @@ jobs:
           node-version: '22'
       - run: npm ci
         working-directory: backend
-      - run: node --check src/server.js
+      - run: npm test
         working-directory: backend
+
+  authority:
+    name: Authority verification tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+        working-directory: authority
+      - run: npm test
+        working-directory: authority
+
+  solidity:
+    name: Solidity escrow tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge test -vv
 
   frontend:
     name: Frontend typecheck + build

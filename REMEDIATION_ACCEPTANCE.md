@@ -90,10 +90,14 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
 
 ## Reproducible verification
 
-- `pytest -q tests/direct`: **44 passed**.
-- `forge test -vv`: **8 passed**.
+The live deployment evidence above remains the historical record for the listed matched pair.
+The subsequent source security release requires a fresh matched deployment because it changes the
+escrow authorization ABI and makes financial roles immutable. Its local reproducible gates are:
+
+- `pytest -q tests/direct`: **45 passed**.
+- `forge test -vv`: **11 passed**.
 - `cd backend && npm test`: **2 passed**.
-- `cd authority && npm test`: **2 passed**.
+- `cd authority && npm test`: **3 passed**.
 - `genvm-lint lint contracts/event_weaver.py`: **3 checks passed**.
 - `cd frontend && npm run lint && npm run build`: successful with only documented warnings.
 

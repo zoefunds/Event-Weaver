@@ -12,6 +12,7 @@ interface Vm {
     function addr(uint256 privateKey) external returns (address);
     function sign(uint256 privateKey, bytes32 digest) external returns (uint8 v, bytes32 r, bytes32 s);
     function prank(address sender) external;
+    function warp(uint256 newTimestamp) external;
     function expectRevert() external;
     function recordLogs() external;
     function getRecordedLogs() external returns (Log[] memory);
@@ -56,6 +57,7 @@ contract EventWeaverEscrowTest {
     Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     uint256 constant AUTHORITY_PK = 0xA11CE;
     address constant GENLAYER = address(0x123456);
+    uint256 constant DEADLINE = type(uint64).max;
     MockUSDC token;
     EventWeaverEscrow escrow;
     address authority;
@@ -78,7 +80,16 @@ contract EventWeaverEscrowTest {
 
     function _register(uint256 marketId) internal {
         bytes32 marketHash = keccak256(abi.encode("canonical-market", marketId));
-        escrow.registerMarket(marketId, marketHash, _signature(escrow.marketRegistrationDigest(marketId, marketHash)));
+        escrow.registerMarket(
+            marketId, marketHash, DEADLINE, _signature(escrow.marketRegistrationDigest(marketId, marketHash, DEADLINE))
+        );
+    }
+
+    function _registerWithDeadline(uint256 marketId, uint256 deadline) internal {
+        bytes32 marketHash = keccak256(abi.encode("canonical-market", marketId));
+        escrow.registerMarket(
+            marketId, marketHash, deadline, _signature(escrow.marketRegistrationDigest(marketId, marketHash, deadline))
+        );
     }
 
     function _deposit(uint256 marketId, uint256 amount) internal {
@@ -88,13 +99,17 @@ contract EventWeaverEscrowTest {
 
     function _ack(uint256 marketId, bytes32 depositId, uint256 amount) internal {
         bytes32 applicationHash = keccak256(abi.encode("accepted-genlayer-application", depositId));
+        bytes memory signature = _signature(
+            escrow.acknowledgeDepositDigest(marketId, depositId, alice, 1, amount, applicationHash)
+        );
         escrow.acknowledgeDeposit(
             marketId,
             depositId,
             alice,
+            1,
             amount,
             applicationHash,
-            _signature(escrow.acknowledgeDepositDigest(marketId, depositId, alice, amount, applicationHash))
+            signature
         );
     }
 
@@ -119,16 +134,27 @@ contract EventWeaverEscrowTest {
         require(token.balanceOf(address(escrow)) == 0, "escrow accepted invalid market");
     }
 
+    function testEscrowRejectsDepositsAfterAuthenticatedStakingDeadline() public {
+        vm.warp(100);
+        _registerWithDeadline(10, 120);
+        vm.warp(121);
+        uint256 beforeBalance = token.balanceOf(alice);
+        vm.prank(alice);
+        vm.expectRevert();
+        escrow.stake(10, 1, 1);
+        require(token.balanceOf(alice) == beforeBalance, "late deposit moved funds");
+    }
+
     function testMarketRegistrationIsBoundToConfiguredGenLayerContract() public {
         bytes32 marketHash = keccak256("market-1");
         bytes32 wrongTypeHash = keccak256(
-            "EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash)"
+            "EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash,uint256 stakingDeadline)"
         );
         bytes32 wrongInner =
-            keccak256(abi.encode(wrongTypeHash, block.chainid, address(escrow), address(0xBAD), 1, marketHash));
+            keccak256(abi.encode(wrongTypeHash, block.chainid, address(escrow), address(0xBAD), 1, marketHash, DEADLINE));
         bytes32 wrongDigest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", wrongInner));
         vm.expectRevert();
-        escrow.registerMarket(1, marketHash, _signature(wrongDigest));
+        escrow.registerMarket(1, marketHash, DEADLINE, _signature(wrongDigest));
         _register(1);
     }
 
@@ -192,8 +218,8 @@ contract EventWeaverEscrowTest {
 
         bytes32 depositId = keccak256("0xabc:7");
         bytes32 reasonHash = keccak256("GENLAYER_APPLICATION_UNAVAILABLE");
-        bytes memory sig = _signature(escrow.depositRefundDigest(5, depositId, alice, 20, reasonHash));
-        escrow.allocateDepositRefund(5, depositId, alice, 20, reasonHash, sig);
+        bytes memory sig = _signature(escrow.depositRefundDigest(5, depositId, alice, 1, 20, reasonHash));
+        escrow.allocateDepositRefund(5, depositId, alice, 1, 20, reasonHash, sig);
         require(escrow.claimable(5, alice) == 20, "deposit refund absent");
         (,, uint256 pending,) = escrow.pools(5);
         require(pending == 0, "pending liability not cleared");
@@ -244,5 +270,26 @@ contract EventWeaverEscrowTest {
         require(count == 2, "both same-tx deposits must be observable by log index");
         (uint256 deposited,, uint256 pending,) = escrow.pools(8);
         require(deposited == 30 && pending == 30, "batched liabilities not reserved");
+    }
+
+    function testOwnerCannotRotateEitherFinancialRole() public {
+        (bool relayerOk,) = address(escrow).call(abi.encodeWithSignature("setRelayer(address)", bob));
+        (bool authorityOk,) = address(escrow).call(abi.encodeWithSignature("setSettlementAuthority(address)", bob));
+        require(!relayerOk && !authorityOk, "financial roles must be immutable");
+        require(escrow.relayer() == address(this), "relayer changed");
+        require(escrow.settlementAuthority() == authority, "authority changed");
+    }
+
+    function testWrongSideAcknowledgementCannotConsumeDeposit() public {
+        _register(9);
+        _deposit(9, 10);
+        bytes32 depositId = keccak256("side-bound-deposit");
+        bytes32 applicationHash = keccak256("application");
+        bytes memory wrongSide = _signature(
+            escrow.acknowledgeDepositDigest(9, depositId, alice, 2, 10, applicationHash)
+        );
+        vm.expectRevert();
+        escrow.acknowledgeDeposit(9, depositId, alice, 1, 10, applicationHash, wrongSide);
+        require(!escrow.handledDeposit(depositId), "wrong-side acknowledgement consumed deposit");
     }
 }

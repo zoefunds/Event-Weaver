@@ -3,6 +3,7 @@
 import { Contract, JsonRpcProvider, Wallet, keccak256, toUtf8Bytes } from 'ethers';
 import { config } from './config.js';
 import { plain, readContract } from './genlayer.js';
+import { getSyncState } from './db.js';
 import {
   authorizeDepositAcknowledgement,
   authorizeDepositRefund,
@@ -13,9 +14,9 @@ import {
 const ABI = [
   'function genLayerContract() view returns (address)',
   'function registeredMarketHash(uint256 marketId) view returns (bytes32)',
-  'function registerMarket(uint256 marketId, bytes32 marketHash, bytes authoritySignature)',
-  'function acknowledgeDeposit(uint256 marketId, bytes32 depositId, address recipient, uint256 amount, bytes32 applicationHash, bytes authoritySignature)',
-  'function allocateDepositRefund(uint256 marketId, bytes32 depositId, address recipient, uint256 amount, bytes32 reasonHash, bytes authoritySignature)',
+  'function registerMarket(uint256 marketId, bytes32 marketHash, uint256 stakingDeadline, bytes authoritySignature)',
+  'function acknowledgeDeposit(uint256 marketId, bytes32 depositId, address recipient, uint8 side, uint256 amount, bytes32 applicationHash, bytes authoritySignature)',
+  'function allocateDepositRefund(uint256 marketId, bytes32 depositId, address recipient, uint8 side, uint256 amount, bytes32 reasonHash, bytes authoritySignature)',
   'function handledDeposit(bytes32 depositId) view returns (bool)',
   'function settle(uint256 marketId, bytes32 settlementId, address[] recipients, uint256[] amounts, bytes32 verdictHash, bytes authoritySignature)',
   'function pools(uint256 marketId) view returns (uint256 deposited, uint256 allocated, uint256 pending, bool settled)',
@@ -57,7 +58,7 @@ export async function ensureMarketRegistered(marketId, logger) {
   if ((await escrow.registeredMarketHash(marketId)) !== ZERO_HASH) return false;
   const authorization = await authorizeMarketRegistration(marketId);
   if (Number(authorization.marketId) !== Number(marketId)) throw new Error('signer returned wrong market id');
-  const tx = await escrow.registerMarket(marketId, authorization.marketHash, authorization.signature);
+  const tx = await escrow.registerMarket(marketId, authorization.marketHash, BigInt(authorization.stakingDeadline), authorization.signature);
   const receipt = await tx.wait();
   if (!receipt || receipt.status !== 1) throw new Error(`market registration failed for ${marketId}`);
   logger.info({ marketId, txHash: tx.hash }, 'registered canonical GenLayer market on Base');
@@ -71,7 +72,7 @@ export async function acknowledgeBaseDeposit(row, logger) {
   try {
     const authorization = await authorizeDepositAcknowledgement(row);
     const tx = await escrow.acknowledgeDeposit(
-      Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
+      Number(row.market_id), depositHash, row.staker, Number(row.side), BigInt(row.amount),
       authorization.applicationHash, authorization.signature
     );
     const receipt = await tx.wait();
@@ -97,7 +98,7 @@ export async function relayDepositRefund(row, reason, logger) {
   try {
     const authorization = await authorizeDepositRefund(row, reason);
     const tx = await escrow.allocateDepositRefund(
-      Number(row.market_id), depositHash, row.staker, BigInt(row.amount),
+      Number(row.market_id), depositHash, row.staker, Number(row.side), BigInt(row.amount),
       authorization.reasonHash, authorization.signature
     );
     const receipt = await tx.wait();
@@ -124,7 +125,9 @@ export async function relayMarket(marketId, logger) {
   // The independent service reads canonical GenLayer/Base state itself and
   // returns the exact payload it authorized. The relayer does not construct
   // or mutate recipients, amounts, verdicts, or settlement identity.
-  const authorization = await authorizeSettlement(marketId);
+  const resolutionTxHash = await getSyncState(`resolutionTx:${marketId}`);
+  if (!resolutionTxHash) throw new Error(`market ${marketId}: no finalized resolution transaction recorded`);
+  const authorization = await authorizeSettlement(marketId, resolutionTxHash);
   if (Number(authorization.marketId) !== Number(marketId)) throw new Error('signer returned wrong market id');
   const recipients = authorization.recipients;
   const amounts = authorization.amounts.map(BigInt);

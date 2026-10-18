@@ -367,10 +367,10 @@ cd frontend && vercel deploy --prod
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
 | Schema extraction | verified against the pinned runner SDK | complete |
-| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **44 passing** |
-| Solidity escrow tests | `forge test -vv` | **8 passing** |
+| **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **45 passing** |
+| Solidity escrow tests | `forge test -vv` | **11 passing** |
 | Backend relay tests | `cd backend && npm test` | **2 passing** |
-| Authority verification tests | `cd authority && npm test` | **2 passing** |
+| Authority verification tests | `cd authority && npm test` | **3 passing** |
 | Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
 
@@ -380,8 +380,13 @@ adjudication permissions, expiry, cancellation/refunds, admin controls, 5 advers
 proving fabricated future/stale timestamps cannot change betting access or force a payout
 (see [Authenticated clock design](#authenticated-clock-design)), and the relayer-only staking
 tests added for the confirmed-payment fix — only-the-relayer-may-stake, idempotent replay of
-the same `txHash:logIndex` deposit id (the crash-recovery case), and relayer rotation (see
-[review-v1.md](review-v1.md)).
+the same `txHash:logIndex` deposit id (the crash-recovery case), and a terminal failed-application
+recovery that blocks stale relay replays (see [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md)).
+
+> The source revision following the live evidence also makes the relayer and settlement authority
+> immutable, binds the signed market deadline and deposit side, and requires a finalized GenVM
+> resolution transaction for settlement authorization. Those ABI changes require a fresh matched
+> GenLayer/Base deployment before they can replace the deployment pair listed below.
 
 ## Deployed addresses
 

@@ -340,6 +340,23 @@ def test_only_relayer_may_record_a_stake():
         assert c.get_pool(0)["yes_pool"] == 0
 
 
+def test_terminal_failed_application_recovery_blocks_later_stake_replay():
+    """A persistent application failure can be converted to a Base refund
+    even while unpaused, and the recovery marker prevents a stale relay job
+    from later creating the position that the user was already refunded for."""
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        deposit_id = "0x" + "ef" * 32 + ":12"
+        vm.sender = OWNER
+        c.void_unapplied_stake(0, hx(BOB), SIDE_YES, GEN, deposit_id)
+        assert c.is_stake_voided(deposit_id) is True
+        relayer_stake(vm, c, 0, BOB, SIDE_YES, GEN, tx_hash="0x" + "ef" * 32 + ":12")
+        assert c.get_position(0, hx(BOB))["yes_amount"] == 0
+        assert c.get_pool(0)["yes_pool"] == 0
+
+
 def test_record_stake_is_idempotent_on_base_tx_hash():
     """A relayer that crashes after broadcasting record_stake but before
     seeing the receipt must be able to safely retry with the same
@@ -716,22 +733,21 @@ def test_real_world_chronology_contradiction_breaks_chain():
         assert "Chronology violation" in result["steps"][1]["reasoning"]
 
 
-def test_date_disagreement_is_explicitly_non_equivalent_and_can_reverse_outcome():
+def test_same_day_timestamp_disagreement_is_explicitly_non_equivalent_and_can_reverse_outcome():
     source = CONTRACT.read_text()
-    assert "agree on the UTC calendar date represented by 'occurred_at_ts'" in source
-    assert "opposite sides of the market deadline" in source
-    assert "can reverse chronology" in source
+    assert "agree on the exact integer value of 'occurred_at_ts'" in source
+    assert "same-day ordering can" in source
+    assert "reverse chronology" in source
 
-    # The disagreement is outcome-critical: a validator placing step 2 on
-    # the preceding UTC date reverses order and deterministically breaks the
-    # chain. Same-date time-of-day normalization is intentionally immaterial.
+    # The disagreement is outcome-critical even on a single UTC day: placing
+    # step 2 a few minutes before step 1 reverses order and breaks the chain.
     vm = VMContext()
     with vm.activate():
         c = fresh(vm)
         make_market(vm, c)
         mock_sources(vm)
-        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 86400))
-        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 172800))
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 300))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW - 600))
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         result = c.request_resolution(0)
         assert result["status"] == "RESOLVED_NO"

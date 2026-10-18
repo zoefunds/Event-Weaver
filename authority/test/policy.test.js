@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertCanonicalSettlement, assertFinalizedSuccessfulTransaction } from '../src/policy.js';
+import { assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction } from '../src/policy.js';
 
 const contract = '0x1111111111111111111111111111111111111111';
 const recipient = '0x2222222222222222222222222222222222222222';
@@ -34,4 +34,17 @@ test('fabricated verdicts and altered payout instructions are rejected', () => {
   assert.throws(() => assertCanonicalSettlement({ ...input, report: { ...input.report, steps: [
     { state: 'FULFILLED', occurred_at_ts: 160 }, { state: 'FULFILLED', occurred_at_ts: 150 },
   ] } }));
+});
+
+test('deposit authorization binds log identity, market, depositor, side and amount', () => {
+  const body = {
+    baseTxHash: `0x${'ab'.repeat(32)}`, logIndex: 7, depositId: `0x${'ab'.repeat(32)}:7`,
+    marketId: 7, recipient, side: 1, amount: '100',
+  };
+  const event = { escrow: contract, marketId: 7, staker: recipient, side: 1, amount: 100n };
+  assert.doesNotThrow(() => assertCanonicalDeposit({ body, event, escrow: contract }));
+  for (const changed of [
+    { ...body, side: 2 }, { ...body, depositId: `${body.baseTxHash}:8` },
+    { ...body, amount: '101' }, { ...body, marketId: 8 }, { ...body, recipient: contract },
+  ]) assert.throws(() => assertCanonicalDeposit({ body: changed, event, escrow: contract }));
 });

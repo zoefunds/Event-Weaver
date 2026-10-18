@@ -17,13 +17,13 @@ contract EventWeaverEscrow {
         bool settled;
     }
     bytes32 private constant MARKET_TYPEHASH = keccak256(
-        "EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash)"
+        "EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash,uint256 stakingDeadline)"
     );
     bytes32 private constant DEPOSIT_ACK_TYPEHASH = keccak256(
-        "EventWeaverDepositAcknowledgement(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint256 amount,bytes32 applicationHash)"
+        "EventWeaverDepositAcknowledgement(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint8 side,uint256 amount,bytes32 applicationHash)"
     );
     bytes32 private constant DEPOSIT_REFUND_TYPEHASH = keccak256(
-        "EventWeaverDepositRefund(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint256 amount,bytes32 reasonHash)"
+        "EventWeaverDepositRefund(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint8 side,uint256 amount,bytes32 reasonHash)"
     );
     bytes32 private constant SETTLEMENT_TYPEHASH = keccak256(
         "EventWeaverSettlement(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 settlementId,bytes32 payoutsHash,bytes32 verdictHash,uint256 deposited)"
@@ -36,18 +36,19 @@ contract EventWeaverEscrow {
     IERC20 public immutable usdc;
     address public immutable genLayerContract;
     address public owner;
-    address public relayer;
-    address public settlementAuthority;
+    address public immutable relayer;
+    address public immutable settlementAuthority;
     bool private locked;
     uint256 public surplusNonce;
     mapping(uint256 => MarketPool) public pools;
     mapping(uint256 => bytes32) public registeredMarketHash;
+    mapping(uint256 => uint256) public registeredMarketDeadline;
     mapping(uint256 => mapping(address => uint256)) public claimable;
     mapping(bytes32 => bool) public handledDeposit;
     mapping(bytes32 => bool) public usedSettlementId;
 
     event Staked(uint256 indexed marketId, address indexed staker, uint8 side, uint256 amount);
-    event MarketRegistered(uint256 indexed marketId, bytes32 indexed marketHash);
+    event MarketRegistered(uint256 indexed marketId, bytes32 indexed marketHash, uint256 stakingDeadline);
     event DepositAcknowledged(
         uint256 indexed marketId,
         bytes32 indexed depositId,
@@ -71,8 +72,6 @@ contract EventWeaverEscrow {
     );
     event Claimed(uint256 indexed marketId, address indexed recipient, uint256 amount);
     event SurplusWithdrawn(uint256 indexed marketId, address indexed recipient, uint256 amount, uint256 nonce);
-    event RelayerUpdated(address indexed relayer);
-    event SettlementAuthorityUpdated(address indexed authority);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -102,28 +101,40 @@ contract EventWeaverEscrow {
         genLayerContract = genLayerContract_;
     }
 
-    function marketRegistrationDigest(uint256 marketId, bytes32 marketHash) public view returns (bytes32) {
+    function marketRegistrationDigest(uint256 marketId, bytes32 marketHash, uint256 stakingDeadline)
+        public
+        view
+        returns (bytes32)
+    {
         return _ethSigned(
-            keccak256(abi.encode(MARKET_TYPEHASH, block.chainid, address(this), genLayerContract, marketId, marketHash))
+            keccak256(
+                abi.encode(
+                    MARKET_TYPEHASH, block.chainid, address(this), genLayerContract, marketId, marketHash, stakingDeadline
+                )
+            )
         );
     }
 
-    function registerMarket(uint256 marketId, bytes32 marketHash, bytes calldata authoritySignature)
+    function registerMarket(uint256 marketId, bytes32 marketHash, uint256 stakingDeadline, bytes calldata authoritySignature)
         external
         onlyRelayer
     {
-        require(marketHash != bytes32(0) && registeredMarketHash[marketId] == bytes32(0), "invalid market registration");
         require(
-            _recover(marketRegistrationDigest(marketId, marketHash), authoritySignature) == settlementAuthority,
+            marketHash != bytes32(0) && stakingDeadline > block.timestamp && registeredMarketHash[marketId] == bytes32(0),
+            "invalid market registration"
+        );
+        require(
+            _recover(marketRegistrationDigest(marketId, marketHash, stakingDeadline), authoritySignature) == settlementAuthority,
             "bad authority signature"
         );
         registeredMarketHash[marketId] = marketHash;
-        emit MarketRegistered(marketId, marketHash);
+        registeredMarketDeadline[marketId] = stakingDeadline;
+        emit MarketRegistered(marketId, marketHash, stakingDeadline);
     }
 
     function stake(uint256 marketId, uint8 side, uint256 amount) external nonReentrant {
         require(registeredMarketHash[marketId] != bytes32(0), "unknown market");
-        require(amount > 0 && !pools[marketId].settled, "invalid stake");
+        require(amount > 0 && !pools[marketId].settled && block.timestamp <= registeredMarketDeadline[marketId], "invalid stake");
         require(side == 1 || side == 2, "invalid side");
         require(usdc.transferFrom(msg.sender, address(this), amount), "USDC transferFrom failed");
         pools[marketId].deposited += amount;
@@ -135,6 +146,7 @@ contract EventWeaverEscrow {
         uint256 marketId,
         bytes32 depositId,
         address recipient,
+        uint8 side,
         uint256 amount,
         bytes32 applicationHash
     ) public view returns (bytes32) {
@@ -148,6 +160,7 @@ contract EventWeaverEscrow {
                     marketId,
                     depositId,
                     recipient,
+                    side,
                     amount,
                     applicationHash
                 )
@@ -159,19 +172,21 @@ contract EventWeaverEscrow {
         uint256 marketId,
         bytes32 depositId,
         address recipient,
+        uint8 side,
         uint256 amount,
         bytes32 applicationHash,
         bytes calldata authoritySignature
     ) external onlyRelayer {
         MarketPool storage pool = pools[marketId];
         require(
-            !handledDeposit[depositId] && recipient != address(0) && amount > 0 && applicationHash != bytes32(0),
+            !handledDeposit[depositId] && recipient != address(0) && (side == 1 || side == 2) && amount > 0
+                && applicationHash != bytes32(0),
             "invalid acknowledgement"
         );
         require(pool.pending >= amount, "amount exceeds pending");
         require(
             _recover(
-                    acknowledgeDepositDigest(marketId, depositId, recipient, amount, applicationHash),
+                    acknowledgeDepositDigest(marketId, depositId, recipient, side, amount, applicationHash),
                     authoritySignature
                 ) == settlementAuthority,
             "bad authority signature"
@@ -185,6 +200,7 @@ contract EventWeaverEscrow {
         uint256 marketId,
         bytes32 depositId,
         address recipient,
+        uint8 side,
         uint256 amount,
         bytes32 reasonHash
     ) public view returns (bytes32) {
@@ -198,6 +214,7 @@ contract EventWeaverEscrow {
                     marketId,
                     depositId,
                     recipient,
+                    side,
                     amount,
                     reasonHash
                 )
@@ -211,18 +228,20 @@ contract EventWeaverEscrow {
         uint256 marketId,
         bytes32 depositId,
         address recipient,
+        uint8 side,
         uint256 amount,
         bytes32 reasonHash,
         bytes calldata authoritySignature
     ) external onlyRelayer {
         MarketPool storage pool = pools[marketId];
         require(
-            !handledDeposit[depositId] && recipient != address(0) && amount > 0 && reasonHash != bytes32(0),
+            !handledDeposit[depositId] && recipient != address(0) && (side == 1 || side == 2) && amount > 0
+                && reasonHash != bytes32(0),
             "invalid refund"
         );
         require(pool.pending >= amount, "amount exceeds pending");
         require(
-            _recover(depositRefundDigest(marketId, depositId, recipient, amount, reasonHash), authoritySignature)
+            _recover(depositRefundDigest(marketId, depositId, recipient, side, amount, reasonHash), authoritySignature)
                 == settlementAuthority,
             "bad authority signature"
         );
@@ -297,18 +316,6 @@ contract EventWeaverEscrow {
         claimable[marketId][msg.sender] = 0;
         require(usdc.transfer(msg.sender, amount), "USDC transfer failed");
         emit Claimed(marketId, msg.sender, amount);
-    }
-
-    function setRelayer(address relayer_) external onlyOwner {
-        require(relayer_ != address(0), "zero relayer");
-        relayer = relayer_;
-        emit RelayerUpdated(relayer_);
-    }
-
-    function setSettlementAuthority(address authority_) external onlyOwner {
-        require(authority_ != address(0), "zero authority");
-        settlementAuthority = authority_;
-        emit SettlementAuthorityUpdated(authority_);
     }
 
     /// @notice Active funds are never withdrawable. After settlement, even

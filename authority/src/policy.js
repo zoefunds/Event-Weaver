@@ -15,6 +15,21 @@ export function canonicalJson(value) {
   return JSON.stringify(canonicalize(value));
 }
 
+/** Compare the signed request fields to the canonical Base `Staked` event.
+ * This deliberately includes side: a valid deposit identifier and amount are
+ * insufficient if a relay attempts to register it on the opposite book. */
+export function assertCanonicalDeposit({ body, event, escrow }) {
+  const expectedId = `${String(body.baseTxHash).toLowerCase()}:${Number(body.logIndex)}`;
+  if (body.depositId !== expectedId) throw new Error('deposit id does not match transaction and log index');
+  if (!event || getAddress(event.escrow) !== getAddress(escrow)) throw new Error('deposit log not emitted by canonical escrow');
+  if (Number(event.marketId) !== Number(body.marketId)
+      || getAddress(event.staker) !== getAddress(body.recipient)
+      || Number(event.side) !== Number(body.side)
+      || BigInt(event.amount) !== BigInt(body.amount)) {
+    throw new Error('deposit payload does not match canonical Staked log');
+  }
+}
+
 export function assertFinalizedSuccessfulTransaction(tx, expectedContract, allowedFunctions, marketId) {
   if (!tx || tx.statusName !== 'ACCEPTED' || tx.txExecutionResultName !== 'SUCCESS' || tx.consensus_data?.final !== true) {
     throw new Error('verdict transaction is not finalized and successful');

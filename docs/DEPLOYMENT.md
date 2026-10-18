@@ -104,6 +104,13 @@ forge create contracts/base/EventWeaverEscrow.sol:EventWeaverEscrow \
 
 Verify `pools(0)` on the new address is `(0, 0, 0, false)` before wiring it in.
 
+The current escrow source also makes the relayer and settlement-authority constructor values
+immutable. There are deliberately no role-rotation setters. Market registration now signs the
+GenLayer staking deadline, and deposit acknowledgements/refunds sign the exact YES/NO side.
+Deploy the authority and backend versions from the same source revision: their ABI payloads must
+match this escrow exactly. The backend records each finalized resolver transaction hash and the
+authority verifies that exact successful, final GenVM transaction before signing Base settlement.
+
 ## 6. Canonical production deployment
 
 The currently reviewed pair is GenLayer `0xB780213B7c1b47cd07913aC83f42371Be2E1bdD3`

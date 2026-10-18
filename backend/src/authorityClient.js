@@ -25,6 +25,7 @@ export const authorizeDepositAcknowledgement = (row) => request('/v1/acknowledge
   logIndex: Number(row.log_index),
   marketId: Number(row.market_id),
   recipient: row.staker,
+  side: Number(row.side),
   amount: String(row.amount),
 });
 export const authorizeDepositRefund = (row, reason) => request('/v1/refund-deposit', {
@@ -33,7 +34,8 @@ export const authorizeDepositRefund = (row, reason) => request('/v1/refund-depos
   logIndex: Number(row.log_index),
   marketId: Number(row.market_id),
   recipient: row.staker,
+  side: Number(row.side),
   amount: String(row.amount),
   reason,
 });
-export const authorizeSettlement = (marketId) => request('/v1/settlement', { marketId });
+export const authorizeSettlement = (marketId, resolutionTxHash) => request('/v1/settlement', { marketId, resolutionTxHash });

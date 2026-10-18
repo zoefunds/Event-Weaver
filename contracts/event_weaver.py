@@ -98,11 +98,9 @@ VERDICT_EQUIVALENCE_PRINCIPLE = (
     "boolean value of 'occurred' AND on the boolean value of "
     "'can_still_occur', and their 'confidence' values are within 25 "
     "points of each other. When 'occurred' is true, they MUST also "
-    "agree on the UTC calendar date represented by 'occurred_at_ts'. "
-    "Different seconds within that same UTC date are equivalent unless "
-    "they fall on opposite sides of the market deadline; a different UTC "
-    "date is materially non-equivalent because it can reverse chronology "
-    "or deadline compliance. Differences in wording of 'reasoning' or "
+    "agree on the exact integer value of 'occurred_at_ts'. A different "
+    "timestamp is materially non-equivalent because same-day ordering can "
+    "reverse chronology or deadline compliance. Differences in wording of 'reasoning' or "
     "'evidence_summary', formatting, or key order are irrelevant."
 )
 
@@ -396,6 +394,9 @@ class EventWeaver(gl.Contract):
     # relayer retry, or two relayer instances racing) can never double-credit.
     applied_base_tx: TreeMap[str, bool]
     late_base_deposit: TreeMap[str, bool]
+    # A terminal recovery decision prevents a delayed/replayed relayer write
+    # from turning a Base-refunded deposit into a later GenLayer position.
+    voided_base_deposit: TreeMap[str, bool]
 
     # ---- platform metrics ---------------------------------------------------
     total_volume: u256
@@ -1072,7 +1073,7 @@ Rules:
             len(parts) == 2 and len(parts[0]) == 66 and parts[0].startswith("0x") and parts[1].isdigit(),
             "deposit_id must be tx_hash:log_index",
         )
-        if self.applied_base_tx.get(tx_key):
+        if self.applied_base_tx.get(tx_key) or self.voided_base_deposit.get(tx_key):
             return
         self.applied_base_tx[tx_key] = True
         market = self._get_market(market_id)
@@ -1086,6 +1087,34 @@ Rules:
         else:
             self.late_base_deposit[tx_key] = True
             self._credit_late_stake(market_id, staker_addr, int(amount))
+
+    @gl.public.write
+    def void_unapplied_stake(self, market_id: int, staker: str, side: int, amount: int, deposit_id: str) -> None:
+        """Terminally void a confirmed Base deposit that cannot be applied.
+
+        The relayer may call this only after its durable retry policy has
+        exhausted. It records an irreversible cross-chain recovery decision:
+        subsequent `record_stake` replays become no-ops, so an authority-signed
+        Base principal refund cannot conflict with a later position creation.
+        This path intentionally works while paused because it services an
+        existing financial obligation rather than admitting a new stake.
+        """
+        self._only_relayer()
+        _require(side in (SIDE_YES, SIDE_NO) and amount > 0, "invalid stake recovery")
+        tx_key = deposit_id.strip().lower()
+        parts = tx_key.split(":")
+        _require(
+            len(parts) == 2 and len(parts[0]) == 66 and parts[0].startswith("0x") and parts[1].isdigit(),
+            "deposit_id must be tx_hash:log_index",
+        )
+        self._get_market(market_id)
+        if self.applied_base_tx.get(tx_key) or self.voided_base_deposit.get(tx_key):
+            return
+        # Parse the address to keep malformed relayer input from producing a
+        # recovery marker that cannot correspond to a valid Base event.
+        Address(staker)
+        self.voided_base_deposit[tx_key] = True
+        self._log(market_id, "STAKE_VOIDED_REFUND", gl.message.sender_address, amount, self._now_ts(), tx_key)
 
     @gl.public.write
     def claim(self, market_id: int) -> int:
@@ -1462,6 +1491,12 @@ Rules:
     @gl.public.view
     def is_stake_late(self, deposit_id: str) -> bool:
         return bool(self.late_base_deposit.get(deposit_id.strip().lower()))
+
+    @gl.public.view
+    def is_stake_voided(self, deposit_id: str) -> bool:
+        """Whether this confirmed Base deposit has an irreversible refund-only
+        recovery decision, preventing a later position registration."""
+        return bool(self.voided_base_deposit.get(deposit_id.strip().lower()))
 
     @gl.public.view
     def get_balance_of(self, address: str) -> int:

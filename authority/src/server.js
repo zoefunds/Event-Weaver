@@ -3,7 +3,7 @@ import express from 'express';
 import { AbiCoder, Contract, Interface, JsonRpcProvider, Wallet, getBytes, getAddress, keccak256, toUtf8Bytes } from 'ethers';
 import { createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
-import { assertCanonicalSettlement, canonicalJson } from './policy.js';
+import { assertCanonicalDeposit, assertCanonicalSettlement, assertFinalizedSuccessfulTransaction, canonicalJson } from './policy.js';
 
 const cfg = {
   port: Number(process.env.PORT ?? 8080),
@@ -22,6 +22,7 @@ const escrowAbi = [
   'event Staked(uint256 indexed marketId, address indexed staker, uint8 side, uint256 amount)',
   'function genLayerContract() view returns (address)',
   'function registeredMarketHash(uint256 marketId) view returns (bytes32)',
+  'function registeredMarketDeadline(uint256 marketId) view returns (uint256)',
   'function handledDeposit(bytes32 depositId) view returns (bool)',
   'function pools(uint256 marketId) view returns (uint256 deposited, uint256 allocated, uint256 pending, bool settled)',
 ];
@@ -48,17 +49,17 @@ async function context() {
   return { chainId: network.chainId, escrowAddress: await escrow.getAddress() };
 }
 async function verifiedDeposit(body) {
-  const expectedId = `${String(body.baseTxHash).toLowerCase()}:${Number(body.logIndex)}`;
-  if (body.depositId !== expectedId) throw new Error('deposit id does not match transaction and log index');
   const receipt = await provider.getTransactionReceipt(body.baseTxHash);
   if (!receipt || receipt.status !== 1) throw new Error('Base deposit transaction is not successful');
   const log = receipt.logs.find((item) => Number(item.index) === Number(body.logIndex));
   if (!log || getAddress(log.address) !== getAddress(cfg.escrow)) throw new Error('deposit log not emitted by canonical escrow');
   const parsed = stakeInterface.parseLog(log);
-  if (!parsed || parsed.name !== 'Staked' || Number(parsed.args.marketId) !== Number(body.marketId)
-      || getAddress(parsed.args.staker) !== getAddress(body.recipient) || parsed.args.amount !== BigInt(body.amount)) {
-    throw new Error('deposit payload does not match canonical Staked log');
-  }
+  if (!parsed || parsed.name !== 'Staked') throw new Error('deposit log is not a Staked event');
+  assertCanonicalDeposit({
+    body,
+    event: { escrow: log.address, marketId: parsed.args.marketId, staker: parsed.args.staker, side: parsed.args.side, amount: parsed.args.amount },
+    escrow: cfg.escrow,
+  });
   return keccak256(toUtf8Bytes(body.depositId));
 }
 
@@ -78,10 +79,11 @@ app.post('/v1/register-market', async (req, res, next) => {
     const market = await read('get_market', [marketId]);
     if (Number(market.id) !== marketId) throw new Error('canonical market identity mismatch');
     const marketHash = keccak256(toUtf8Bytes(canonicalJson(market)));
+    const stakingDeadline = BigInt(market.deadline_ts);
     const { chainId, escrowAddress } = await context();
-    const typeHash = keccak256(toUtf8Bytes('EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash)'));
-    const signature = await signInner(['bytes32','uint256','address','address','uint256','bytes32'], [typeHash, chainId, escrowAddress, cfg.genLayerContract, marketId, marketHash]);
-    res.json({ marketId, marketHash, signature });
+    const typeHash = keccak256(toUtf8Bytes('EventWeaverMarketRegistration(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 marketHash,uint256 stakingDeadline)'));
+    const signature = await signInner(['bytes32','uint256','address','address','uint256','bytes32','uint256'], [typeHash, chainId, escrowAddress, cfg.genLayerContract, marketId, marketHash, stakingDeadline]);
+    res.json({ marketId, marketHash, stakingDeadline: stakingDeadline.toString(), signature });
   } catch (err) { next(err); }
 });
 
@@ -89,13 +91,16 @@ app.post('/v1/acknowledge-deposit', async (req, res, next) => {
   try {
     const body = req.body; const depositHash = await verifiedDeposit(body);
     if (!await read('is_stake_applied', [body.depositId])) throw new Error('deposit is not finalized in canonical GenLayer state');
+    const position = await read('get_position', [Number(body.marketId), body.recipient]);
+    const sideAmount = Number(body.side) === 1 ? BigInt(position.yes_amount) : BigInt(position.no_amount);
+    if (sideAmount < BigInt(body.amount)) throw new Error('canonical GenLayer position does not contain the deposited side and amount');
     if (await escrow.handledDeposit(depositHash)) throw new Error('deposit already handled');
     const applicationHash = keccak256(toUtf8Bytes(`GENLAYER_FINAL_STATE:${cfg.genLayerContract.toLowerCase()}:${body.depositId}`));
     const { chainId, escrowAddress } = await context();
-    const typeHash = keccak256(toUtf8Bytes('EventWeaverDepositAcknowledgement(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint256 amount,bytes32 applicationHash)'));
+    const typeHash = keccak256(toUtf8Bytes('EventWeaverDepositAcknowledgement(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint8 side,uint256 amount,bytes32 applicationHash)'));
     const signature = await signInner(
-      ['bytes32','uint256','address','address','uint256','bytes32','address','uint256','bytes32'],
-      [typeHash, chainId, escrowAddress, cfg.genLayerContract, Number(body.marketId), depositHash, body.recipient, BigInt(body.amount), applicationHash]
+      ['bytes32','uint256','address','address','uint256','bytes32','address','uint8','uint256','bytes32'],
+      [typeHash, chainId, escrowAddress, cfg.genLayerContract, Number(body.marketId), depositHash, body.recipient, Number(body.side), BigInt(body.amount), applicationHash]
     );
     res.json({ applicationHash, signature });
   } catch (err) { next(err); }
@@ -106,17 +111,16 @@ app.post('/v1/refund-deposit', async (req, res, next) => {
     const body = req.body; const depositHash = await verifiedDeposit(body);
     if (await escrow.handledDeposit(depositHash)) throw new Error('deposit already handled');
     const applied = await read('is_stake_applied', [body.depositId]);
-    const marketCount = Number(await read('get_market_count'));
-    const chainConfig = await read('get_config');
-    if (applied || (Number(body.marketId) < marketCount && !chainConfig.paused)) {
-      throw new Error('refund policy requires an unapplied deposit and absent market or emergency pause');
+    const voided = await read('is_stake_voided', [body.depositId]);
+    if (applied || !voided) {
+      throw new Error('refund policy requires a canonical unapplied-stake recovery decision');
     }
     const reasonHash = keccak256(toUtf8Bytes(String(body.reason)));
     const { chainId, escrowAddress } = await context();
-    const typeHash = keccak256(toUtf8Bytes('EventWeaverDepositRefund(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint256 amount,bytes32 reasonHash)'));
+    const typeHash = keccak256(toUtf8Bytes('EventWeaverDepositRefund(uint256 chainId,address escrow,address genLayerContract,uint256 marketId,bytes32 depositId,address recipient,uint8 side,uint256 amount,bytes32 reasonHash)'));
     const signature = await signInner(
-      ['bytes32','uint256','address','address','uint256','bytes32','address','uint256','bytes32'],
-      [typeHash, chainId, escrowAddress, cfg.genLayerContract, Number(body.marketId), depositHash, body.recipient, BigInt(body.amount), reasonHash]
+      ['bytes32','uint256','address','address','uint256','bytes32','address','uint8','uint256','bytes32'],
+      [typeHash, chainId, escrowAddress, cfg.genLayerContract, Number(body.marketId), depositHash, body.recipient, Number(body.side), BigInt(body.amount), reasonHash]
     );
     res.json({ reasonHash, signature });
   } catch (err) { next(err); }
@@ -125,6 +129,12 @@ app.post('/v1/refund-deposit', async (req, res, next) => {
 app.post('/v1/settlement', async (req, res, next) => {
   try {
     const marketId = Number(req.body.marketId);
+    const resolutionTxHash = String(req.body.resolutionTxHash ?? '');
+    if (!/^0x[0-9a-fA-F]{64}$/.test(resolutionTxHash)) throw new Error('finalized resolution transaction hash is required');
+    const resolutionTx = await genlayer.getTransaction({ hash: resolutionTxHash });
+    assertFinalizedSuccessfulTransaction(
+      plain(resolutionTx), cfg.genLayerContract, ['request_resolution', 'check_step', 'expire_market'], marketId
+    );
     const [market, report, payouts, pool] = await Promise.all([
       read('get_market', [marketId]), read('get_resolution_report', [marketId]),
       read('get_base_payouts', [marketId]), escrow.pools(marketId),

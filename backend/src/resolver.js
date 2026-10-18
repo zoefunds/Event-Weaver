@@ -2,6 +2,7 @@ import { createClient, createAccount, generatePrivateKey } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
 import { readContract, plain } from './genlayer.js';
 import { config } from './config.js';
+import { setSyncState } from './db.js';
 
 /**
  * Automatic deadline resolver.
@@ -75,6 +76,9 @@ async function resolveDueMarkets(logger) {
         interval: 5000,
         retries: 60,
       });
+      // Settlement authorization requires the exact finalized GenVM decision;
+      // persist this resolver-produced hash for the independent authority.
+      await setSyncState(`resolutionTx:${id}`, hash);
 
       const after = plain(await readContract('get_market', [id]));
       if (after.status !== 'OPEN' && after.status !== 'RESOLVING') {

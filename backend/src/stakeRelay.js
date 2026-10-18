@@ -145,8 +145,15 @@ export async function applyPendingStakes(logger) {
     } catch (err) {
       if (/market .*not found|unknown market/i.test(err.message) || Number(row.attempts) >= 9) {
         try {
+          const voidHash = await client.writeContract({
+            address: config.contractAddress,
+            functionName: 'void_unapplied_stake',
+            args: [Number(row.market_id), row.staker, Number(row.side), Number(row.amount), row.deposit_id],
+            value: 0n,
+          });
+          await client.waitForTransactionReceipt({ hash: voidHash, status: 'ACCEPTED', interval: 3000, retries: 60 });
           await relayDepositRefund(row, 'GENLAYER_APPLICATION_FAILED', logger);
-          await markStakeApplied(row.deposit_id, null);
+          await markStakeApplied(row.deposit_id, voidHash);
           logger.warn({ depositId: row.deposit_id }, 'unapplied deposit safely converted to Base refund');
           continue;
         } catch (refundError) {
