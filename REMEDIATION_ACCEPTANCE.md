@@ -106,6 +106,21 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
   The pool was `deposited=100000, pending=0` before settlement; the recipient’s balance was
   `121092500` before claim and `121192500` after (+100000 units).
 
+- Fresh matched-pair applied late-deposit recovery: market 2 was created by GenLayer
+  [`0x939e81c9fb080f575ef53dd87d11531091b16585e1092cbc301307705f368e5d`](https://studio.genlayer.com/transactions/0x939e81c9fb080f575ef53dd87d11531091b16585e1092cbc301307705f368e5d)
+  and cancelled by the wallet in finalized transaction
+  [`0x27da0ec02452b2b1f1d109a2cb62094b8925ac68f04df23122322b2050aa06ea`](https://studio.genlayer.com/transactions/0x27da0ec02452b2b1f1d109a2cb62094b8925ac68f04df23122322b2050aa06ea).
+  A **post-terminal** 0.100000-USDC Base deposit
+  [`0xd1ed52707cd0a2085647cf5b8eb59b221e660364570eca9e6a00aa1a6e274454`](https://sepolia.basescan.org/tx/0xd1ed52707cd0a2085647cf5b8eb59b221e660364570eca9e6a00aa1a6e274454)
+  at log index `11` was persisted, relayed, and canonical GenLayer state showed
+  `late_amount=100000`, `yes_amount=0`, `no_amount=0`. Its Base pool moved from
+  `pending=100000` to `pending=0`, proving the separately authenticated late path consumed
+  the reserve. Authority-signed settlement
+  [`0x5d74dd95b69652354cd6311d6ca07f48e3e846c960f63e50b8033205c0f30fa4`](https://sepolia.basescan.org/tx/0x5d74dd95b69652354cd6311d6ca07f48e3e846c960f63e50b8033205c0f30fa4)
+  allocated the exact 100000-unit refund. The recipient claimed it in
+  [`0xe42341f91090d292ce89d260216740582c742ca65901033b98e7ca94b7df5bc5`](https://sepolia.basescan.org/tx/0xe42341f91090d292ce89d260216740582c742ca65901033b98e7ca94b7df5bc5):
+  claimable is now zero and the wallet returned from `121092500` to `121192500` units.
+
 ## Reproducible verification
 
 The historical value-transfer evidence above remains retained for review. The active immutable
