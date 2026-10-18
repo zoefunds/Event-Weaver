@@ -9,7 +9,7 @@ For deployed addresses, lifecycle, configuration, and the operating checklist, s
 ```text
 React frontend on Vercel
   |\
-  | \ GenLayer wallet writes: create market, record YES or NO stake, adjudicate
+  | \ GenLayer wallet writes: create market and adjudicate
   |  \
   |   GenLayer StudioNet EventWeaver contract
   |              ^
@@ -30,16 +30,17 @@ Wallet on Base Sepolia ----------------+-- USDC approve, escrow stake, claim
 | Component | Responsibility | Cannot do |
 | --- | --- | --- |
 | GenLayer contract | Stores market rules and positions, evaluates evidence in validator consensus, calculates final payouts | Custody or transfer USDC in V1 |
-| Base escrow | Custodies USDC, records allocations, transfers claims | Decide a market outcome or alter payout rules |
-| Backend relayer | Relays the immutable `get_base_payouts` output into escrow settlement | Select winners or claim a user's USDC |
+| Base escrow | Custodies USDC, verifies signed canonical allocations, protects claims, transfers claims | Decide a market outcome or accept an unsigned/altered payout |
+| Backend relayer | Relays confirmed `Staked` logs and submits authority-approved settlements/refunds | Unilaterally select winners, alter allocations, or claim a user's USDC |
+| Settlement authority | Independently signs commitments bound to the finalized verdict, escrow, chain, market and exact payout | Move funds directly or bypass escrow accounting |
 | User wallet | Approves, stakes, and claims | Alter consensus outcome or another user's claim |
 
 ## Data and value flow
 
 1. The frontend submits `create_market` to GenLayer.
-2. To stake, the wallet deposits USDC into Base escrow and records an equal six-decimal amount on GenLayer for YES or NO.
+2. To stake, the wallet deposits USDC into Base escrow. After confirmations, the backend records that exact `Staked` event on GenLayer using `txHash:logIndex` as its idempotency key.
 3. The backend resolver requests adjudication when a market is due. Validators fetch the configured public evidence and the GenLayer contract finalizes the market.
-4. The relayer reads `get_base_payouts`, verifies that allocations do not exceed the escrowed amount, and submits the one-time Base `settle` call.
+4. The relayer reads `get_base_payouts`; the independent authority signs the canonical verdict/allocation commitment, and the relayer submits the one-time Base `settle` call. A deposit applied after settlement is recovered through separately signed `allocateLateRefund`.
 5. The recipient calls `claim`. The escrow transfers USDC directly to that wallet.
 
 ## Read path and rate-limit posture
@@ -50,9 +51,10 @@ StudioNet has a shared rate budget. Indexing, automatic resolution, and settleme
 
 ## Security properties
 
-- The relayer private key exists only as a Fly secret.
+- The relayer and independent settlement-authority private keys exist only as separate Fly secrets.
 - The frontend contains no private key and never sends one to the API.
-- Settlement may be performed once per market and allocations cannot exceed the escrowed pool.
+- Settlement may be performed once per market, requires an authority signature, and allocations cannot exceed the escrowed pool.
+- Active deposits, pending late refunds, and allocated but unclaimed winnings cannot be administratively withdrawn. A post-settlement surplus withdrawal requires a separate nonce-bound authority signature.
 - The escrow's `claimable` mapping prevents a second claim.
 - Outcome evaluation is executed by GenLayer validators, not by the backend.
 - The contract uses an internal consensus time source, not caller-supplied timestamps.

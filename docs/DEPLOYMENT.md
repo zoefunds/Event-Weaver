@@ -81,3 +81,11 @@ forge create contracts/base/EventWeaverEscrow.sol:EventWeaverEscrow \
 ```
 
 Verify `pools(0)` on the new address is `(0, 0, false)` before wiring it in.
+
+## 5. Canonical production deployment
+
+The currently reviewed pair is GenLayer `0x9E9Ef1bC5d4436C62Bc2847Ae0a4bb3DeAd91B8F`
+with Base escrow `0xF53f14aAed565BfA276598e02943DFed69217705`. Deployment transactions,
+finalized GenVM receipts, settlement proof, and before/after USDC balances are recorded in
+[`REMEDIATION_ACCEPTANCE.md`](../REMEDIATION_ACCEPTANCE.md). The Fly backend and Vercel
+frontend are deployed with this exact pair.

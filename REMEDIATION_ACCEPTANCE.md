@@ -1,7 +1,7 @@
 # Financial Remediation & Live Acceptance Evidence
 
 Date: 2026-10-18  
-Source commits: `6d7c0fc` (financial hardening) and `86ed043` (mandatory event-time validation)
+Source commits: `6d7c0fc` (financial hardening) and `86ed043` (mandatory event-time validation). Canonical public branch: `main`.
 
 ## Current matched deployment
 
@@ -47,5 +47,10 @@ The live market was "Final E2E: Bitcoin chronology". It required the Bitcoin gen
 - `cd backend && npm test`: **1 passed**.
 - `genvm-lint lint contracts/event_weaver.py`: **3 checks passed**.
 - `cd frontend && npm run build`: successful production build.
+
+Production verification on 2026-10-18 confirmed both Fly machines healthy, `/health` and
+`/api/config` reporting the canonical GenLayer contract, production CORS accepting the Vercel
+origin, and the deployed Vercel bundle containing the canonical API, GenLayer, escrow and USDC
+values with no superseded contract address.
 
 The Solidity suite covers active-custody withdrawal resistance, altered-relayer allocations, settlement without authority verdict, post-settlement late refunds and same-transaction multiple stake logs. Direct GenLayer tests cover fee snapshots, empty-winning-side refunds, contradictory real-world chronology, SDK-decoded addresses, and `txHash:logIndex` idempotency.

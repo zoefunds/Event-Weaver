@@ -19,7 +19,7 @@
 1. [What is EventWeaver](#what-is-eventweaver)
 2. [Why this needs GenLayer](#why-this-needs-genlayer)
 3. [Screenshots](#screenshots)
-4. [V1 documentation](v1.md) · [Confirmed-payment & recovery fix](review-v1.md)
+4. [V1 documentation](v1.md) · [Financial remediation evidence](REMEDIATION_ACCEPTANCE.md)
 5. [How a market works (lifecycle)](#how-a-market-works)
 6. [The value-transfer path](#the-value-transfer-path)
 7. [Architecture](#architecture)
@@ -73,22 +73,26 @@ steps 2 and 3 below) is recovered automatically rather than stranded:
 2. The backend's stake relay (`backend/src/stakeRelay.js`) watches the escrow for confirmed
    `Staked` events, durably records each one in Postgres (`pending_stakes`) the moment it
    clears confirmations, and is the *only* caller GenLayer trusts to turn a deposit into a
-   position, via `record_stake(marketId, staker, side, amount, base_tx_hash)` — there is no
-   longer any way for a caller to fund their own position. `base_tx_hash` makes this
+   position, via `record_stake(marketId, staker, side, amount, deposit_id)` — there is no
+   longer any way for a caller to fund their own position. The event-specific
+   `deposit_id` (`txHash:logIndex`) makes this
    idempotent, so a relayer crash and retry can never double-credit a stake — and because the
    deposit was already durably recorded in step 2, the retry loop keeps retrying every
    unapplied row until the GenLayer write lands, with no action needed from the user. Poll
    `GET /api/stakes/:txHash` to see a deposit move from `confirmed_onchain`/`retry_pending` to
    `applied`.
-3. On terminal resolution, the backend relayer reads GenLayer's consensus-derived payout list
-   and calls escrow `settle` exactly once.
+3. On terminal resolution, the backend relayer reads GenLayer's consensus-derived payout list.
+   A separate settlement authority signs a commitment binding the chain, escrow, market,
+   finalized verdict, exact recipients and amounts, and deposited pool; only then can the
+   relayer call escrow `settle` exactly once. Late deposits receive separately signed,
+   idempotent Base refunds even after settlement.
 4. Winners call escrow `claim(marketId)` directly; the backend never custody-transfers funds.
 
 Set `VITE_BASE_ESCROW_ADDRESS` in the frontend and `BASE_ESCROW_ADDRESS` /
-`BASE_SEPOLIA_RELAYER_PRIVATE_KEY` in the backend before running the full flow — the relayer's
-key must be the same key used to deploy `EventWeaverEscrow` (its address is the escrow's
-`relayer` for `settle`) and must also be the GenLayer contract's `relayer` (defaults to
-whichever address deploys the GenLayer contract; rotate it with `set_relayer(...)` if needed).
+`BASE_SEPOLIA_RELAYER_PRIVATE_KEY` and `SETTLEMENT_AUTHORITY_PRIVATE_KEY` in the backend before
+running the full flow. The relayer address must match the escrow and GenLayer relayer roles;
+the independent authority address must match `EventWeaverEscrow.settlementAuthority()`. Never
+reuse one key for both roles.
 
 Full writeup of the confirmed-payment and crash-recovery fix — problem, root cause, fix, and
 tests — is in **[review-v1.md](review-v1.md)**. For the complete V1 migration record,
@@ -335,6 +339,7 @@ fly secrets set \
   CONTRACT_ADDRESS=0x… \
   BASE_ESCROW_ADDRESS=0x… \
   BASE_SEPOLIA_RELAYER_PRIVATE_KEY=0x… \
+  SETTLEMENT_AUTHORITY_PRIVATE_KEY=0x… \
   CORS_ORIGINS=https://your-app.vercel.app
 
 # 4. Frontend → Vercel
@@ -350,7 +355,7 @@ cd frontend && vercel deploy --prod
 | Gate | Command | Status |
 | --- | --- | --- |
 | Contract lint | `genvm-lint lint contracts/event_weaver.py` | 3/3 clean |
-| Schema extraction | verified against the pinned runner SDK | 34 methods |
+| Schema extraction | verified against the pinned runner SDK | complete |
 | **Direct unit tests** | `pytest tests/direct/ -v` (gltest.direct, mocked web/LLM) | **40 passing** |
 | Live integration | StudioNet: create → Base USDC stake → relay confirms deposit → `record_stake` → adjudicate real URLs → Base escrow settlement → claim | verified |
 | CI | GitHub Actions: lint + direct tests + backend check + frontend build | on every push |
@@ -361,7 +366,7 @@ adjudication permissions, expiry, cancellation/refunds, admin controls, 5 advers
 proving fabricated future/stale timestamps cannot change betting access or force a payout
 (see [Authenticated clock design](#authenticated-clock-design)), and the relayer-only staking
 tests added for the confirmed-payment fix — only-the-relayer-may-stake, idempotent replay of
-the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
+the same `txHash:logIndex` deposit id (the crash-recovery case), and relayer rotation (see
 [review-v1.md](review-v1.md)).
 
 ## Deployed addresses
@@ -374,25 +379,13 @@ the same `base_tx_hash` (the crash-recovery case), and relayer rotation (see
 | Backend API | https://eventweaver-api-v2.fly.dev (Fly app `eventweaver-api-v2` + Postgres `eventweaver-api-v2-db`, org `personal`, region `iad`) |
 | Frontend | https://eventweaver-orpin.vercel.app |
 
-> The backend and database were migrated off the old `eventweaver-api-prod` deployment to a new
-> Fly account/app (`eventweaver-api-v2`) with its own Postgres. The indexer prunes rows outside
-> the active contract's id range, preventing retired markets from appearing as stakeable.
+> This GenLayer contract and Base escrow are an intentionally matched deployment pair. GenLayer
+> contracts are immutable and market ids restart at zero after a redeploy, so every future
+> GenLayer deployment must receive a fresh escrow. Never reuse an escrow across deployments:
+> doing so can collide with an unrelated market that has the same integer id.
 >
-> The Intelligent Contract above is a fresh redeploy, not an upgrade of the earlier
-> `0x0551246DcB7de220474b5a479820AA18F1DDAB5C` address — GenLayer contracts are immutable, so
-> shipping the late-stake-crediting fix required a new contract instance. That means market ids
-> reset to 0 and **do not carry over**: markets on `0x0551246D...` must be recreated against this
-> address if you want them live again.
->
-> The Base Sepolia escrow above is likewise a fresh deployment, not the original
-> `0x83D73b3217314aF32D833e18d90356299835d0a5`. That escrow tracks pools by a plain `marketId`
-> integer with no awareness of which GenLayer contract it belongs to — reusing it with the new
-> contract's market ids would have collided with the old deployment's already-settled pools
-> (and, for not-yet-settled ones, silently mixed funds across two unrelated markets). A new
-> escrow avoids that entirely; it shares the same relayer EOA as before.
->
-> See [review-v1.md](review-v1.md) for why the V1.1 contract/escrow pair before this one was
-> introduced, and why `stake_yes`/`stake_no` were replaced with relayer-gated `record_stake`.
+> See [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md) for the reviewed source commits,
+> live transactions, adversarial tests and recipient balance proof.
 
 ## Authenticated clock design
 
@@ -450,7 +443,7 @@ frontend/src/
   pages/                       Landing, Markets, MarketDetail, Create, Portfolio
   components/                  Nav, Footer, MarketCard, ChainViz, Chips, Toast, Walkthrough, Logo
   lib/                         wallet (genlayer-js + MetaMask), baseSepolia (escrow calls), api client, types, versionCheck (stale-build reload)
-tests/direct/                  31 in-memory contract tests (gltest.direct)
+tests/direct/                  40 in-memory contract tests (gltest.direct)
 docs/                          ARCHITECTURE · API · CONTRACT · DEPLOYMENT · images/
 v1.md                          V1 USDC on Base Sepolia architecture and operations
 .github/workflows/ci.yml       lint + tests + builds

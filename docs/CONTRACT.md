@@ -30,21 +30,26 @@ The GenLayer contract is the outcome and allocation ledger, not a native-token c
 
 ## Fees & settlement
 
-Losing pool → 1% protocol fee + 0.5% creator fee → remainder distributed pro-rata to winning
-stakers through the Base escrow allocation list. Cancelled markets receive the contract-defined
+Each market snapshots the protocol and creator fee basis points at creation. The losing pool
+uses that immutable snapshot; the remainder is distributed pro-rata to winning stakers through
+the Base escrow allocation list. If the winning side has no participants, every participant
+receives principal back and no fee accrues. Cancelled markets receive the contract-defined
 refund allocation. There is no V1 `withdraw` of native GEN.
 
 ## Verified on StudioNet (integration evidence)
 
-- Deploy + `genlayer schema` loads (35 methods).
+- Deploy + `genlayer schema` loads the complete public interface.
 - `create_market` with 2–3 step chains (CLI and JS paths).
-- `record_stake(market_id, staker, side, amount, base_tx_hash)` — relayer-only — records a
+- `record_stake(market_id, staker, side, amount, deposit_id)` — relayer-only — records a
   confirmed Base Sepolia USDC stake in the GenLayer consensus ledger (activity log + pool
   balances) on behalf of `staker`, once the backend stake relay has observed the matching
-  `Staked` event finalize on Base Sepolia. `base_tx_hash` is idempotent, so a relayer retry
-  after a crash between confirming the deposit and recording the stake is a safe no-op.
-- Final payouts come from `get_base_payouts`; the Base escrow relayer settles them and
-  winners self-claim USDC from Base Sepolia.
+  `Staked` event finalize on Base Sepolia. `deposit_id` is `txHash:logIndex`, so retries are
+  safe while distinct logs from the same transaction remain distinct stakes.
+- Final payouts come from `get_base_payouts`; the Base relayer can settle only with an
+  independent authority signature over the canonical allocation and finalized verdict.
+  Post-settlement late deposits receive separately authenticated, idempotent refunds.
+- Every fulfilled step records an evidence-backed `occurred_at_ts`; the contract requires
+  strictly increasing occurrence times across the causal chain.
 - `request_resolution` fetched `apple.com/newsroom` live, LLM produced a correct
   low-confidence PENDING verdict (no price cut announced), consensus `MAJORITY_AGREE`
   in one round — no leader rotation, no Undetermined.

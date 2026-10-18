@@ -49,18 +49,11 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
 - The tokens are real. Staking deposits Base Sepolia test USDC into the deployed escrow,
   then records the same amount on GenLayer. After resolution, the escrow sends a claimed
   USDC allocation directly to the winner's wallet.
-- The five demo markets on the live site are not toy examples — they're built from
-  real, checkable facts (the actual date of Ethereum's Merge, Apple's actual product
-  history, SpaceX's actual launch history) and the outcomes you see were decided by the
-  contract, not scripted by me. All five have already run:
-
-  | Market | Chain | What happened |
-  | --- | --- | --- |
-  | Bitcoin Seven-Figure Breakout | 2 steps | Failed at step 1 — validators fetched live BTC price data and correctly ruled it nowhere near $1M |
-  | Apple Spatial Computing Cascade | 3 steps | Steps 1–2 passed at 100% confidence (Vision Pro and iPhone 16 are real, verifiable releases), step 3 failed (Apple has never announced a foldable iPhone) |
-  | Ethereum Merge Aftershock Chain | 2 steps | Step 1 passed (the Merge is historical fact), step 2 failed (Ethereum has not "flipped" Bitcoin's market cap) |
-  | SpaceX Deep Space Milestone Chain | 3 steps | All three steps passed — resolved YES |
-  | Federal Reserve August Rate Path | 2 steps | Still open — a genuine month-long real-world prediction, not staged |
+- The current deployment includes the fully documented “Final E2E: Bitcoin chronology” market.
+  Validators established that the Bitcoin genesis block occurred before the first halving,
+  storing both occurrence timestamps and resolving YES. The complete creation, deposit,
+  recording, adjudication, settlement and withdrawal transaction sequence is in
+  [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
 
 ## How to use it
 
@@ -97,12 +90,13 @@ the actual product — not a themed skin on a yes/no template.
 
 ## Engineering evidence (so the claims above can be checked, not just read)
 
-- Contract passes `genvm-lint` cleanly and its schema loads on-chain (`genlayer schema`
-  returns all 35 methods) — the two most common failure points for GenLayer contracts.
-- Automated unit tests (`pytest tests/direct/`) cover market creation validation, USDC-denominated
+- Contract passes all three `genvm-lint` checks and its complete schema loads on-chain — the
+  two most common failure points for GenLayer contracts.
+- Forty direct unit tests (`pytest tests/direct/`) cover market creation validation, USDC-denominated
   staking, fee/settlement math, every adjudication outcome (full pass, chain break,
   inconclusive evidence, malformed LLM output), permission rules, and admin controls.
-- Every V1 write path listed above (create, Base USDC deposit, stake record, claim, adjudicate) has
+- Every V1 write path listed above (create, Base USDC deposit, stake record, adjudicate,
+  authority-bound settlement and claim) has
   been executed against the live StudioNet contract with real transaction hashes, not just
   tested in isolation.
 - GitHub Actions CI runs the contract lint, the test suite, and both app builds on every
