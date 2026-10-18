@@ -29,7 +29,10 @@ Deployment evidence:
 - The authority runs as a separate Fly application. The backend contains no authority private
   key; it has only a private service URL and bearer token. The obsolete backend key secret was removed.
 
-## Live YES outcome with losing-pool distribution
+## Historical live YES outcome with losing-pool distribution
+
+This completed value-transfer sequence belongs to the preceding, retired matched pair. It is
+retained as historical evidence; it must not be read as activity on the immutable pair above.
 
 Market 0 verifies the Bitcoin genesis-to-first-halving chronology.
 
@@ -54,7 +57,7 @@ Market 0 verifies the Bitcoin genesis-to-first-halving chronology.
    Recipient balance changed from `121.100000` to `121.398500` USDC; claimable changed from
    `0.298500` to zero.
 
-## Live NO outcome
+## Historical live NO outcome
 
 Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin genesis block.
 
@@ -77,12 +80,12 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
   wrong contract/market identities, and altered allocations.
 - Pending deposits are escrow liabilities. Settlement and surplus withdrawal require
   `pending == 0`; signed acknowledgements or refunds consume each deposit exactly once.
-- Relay recovery starts from deployment block `48278617`, not a recent rolling window.
+- Relay recovery for the active escrow starts from deployment block `48280044`, not a recent rolling window.
 - A two-instance race was observed live and handled idempotently: one instance acknowledged a
   deposit while the other re-read `handledDeposit` and completed without retry noise.
 - Pause does not block servicing confirmed financial obligations or late-refund recovery.
 - Event deadlines govern occurrence; a separate seven-day verification window permits delayed
-  evidence. Validators agree on the decision-critical UTC date and deadline side.
+  evidence. Validators agree on the decision-critical exact occurrence timestamp and deadline side.
 - Fee values are snapshotted at creation. Quote and settlement use the same snapshot and the
   same empty-winning-side principal-refund policy.
 - Archived cancellation proof: settlement `0x6a9c6daa72e3426105e48655d87b3e78243b97f2d3ce1a4b8e95da3cf540a5d6`;
@@ -90,9 +93,9 @@ Market 1 deliberately asserted the false date 4 January 2009 for the Bitcoin gen
 
 ## Reproducible verification
 
-The live deployment evidence above remains the historical record for the listed matched pair.
-The subsequent source security release requires a fresh matched deployment because it changes the
-escrow authorization ABI and makes financial roles immutable. Its local reproducible gates are:
+The historical value-transfer evidence above remains retained for review. The active immutable
+pair is verified by its deployment receipts, matching backend/authority health reports, escrow
+constructor reads, and the on-chain schema. Its reproducible gates are:
 
 - `pytest -q tests/direct`: **45 passed**.
 - `forge test -vv`: **11 passed**.

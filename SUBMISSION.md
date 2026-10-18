@@ -52,11 +52,12 @@ app calling an API: an AI app has one owner deciding the answer; this has none.
 - The tokens are real. Staking deposits Base Sepolia test USDC into the deployed escrow,
   then records the same amount on GenLayer. After resolution, the escrow sends a claimed
   USDC allocation directly to the winner's wallet.
-- The current deployment includes documented live YES and NO Bitcoin chronology markets.
-  Validators established that the Bitcoin genesis block occurred before the first halving in
-  the YES market, storing both occurrence timestamps; a deliberately false-date market
-  resolved NO. The complete creation, deposit, recording, adjudication, settlement and
-  withdrawal transaction sequences are in
+- Historical live evidence includes YES and NO Bitcoin chronology markets from the preceding
+  matched deployment. Validators established that the Bitcoin genesis block occurred before
+  the first halving in the YES market, storing both occurrence timestamps; a deliberately
+  false-date market resolved NO. The active immutable deployment is separately verified by
+  matching service configuration, escrow bindings, deployment receipts, and schema. The full
+  record is in
   [REMEDIATION_ACCEPTANCE.md](REMEDIATION_ACCEPTANCE.md).
 
 ## How to use it
@@ -97,14 +98,14 @@ the actual product — not a themed skin on a yes/no template.
 
 - Contract passes all three `genvm-lint` checks and its complete schema loads on-chain — the
   two most common failure points for GenLayer contracts.
-- 44 direct unit tests (`pytest tests/direct/`) cover market creation validation,
+- 45 direct unit tests (`pytest tests/direct/`) cover market creation validation,
   USDC-denominated staking, fee/settlement math, every adjudication outcome (full pass,
   chain break, inconclusive evidence, malformed LLM output), permission rules, and admin
-  controls. Eight Solidity custody tests, two backend-relay tests, and two authority-boundary
+  controls. Eleven Solidity custody tests, two backend-relay tests, and three authority-boundary
   tests cover the cross-chain financial paths.
-- Every V1 write path listed above (create, Base USDC deposit, stake record, adjudicate,
-  authority-bound settlement and claim) has
-  been executed against the live StudioNet contract with real transaction hashes, not just
-  tested in isolation.
+- The preceding deployment exercised every V1 write path with real transaction hashes. The
+  current immutable pair has matching deployment, schema, escrow-binding, frontend, backend,
+  and authority verification; its full adverse-path coverage is reproducible in the committed
+  test suites.
 - GitHub Actions CI runs the contract lint, the test suite, and both app builds on every
   push.
