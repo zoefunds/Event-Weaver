@@ -89,6 +89,11 @@ def mock_sources(vm, body="Official announcement: the event occurred."):
     vm.mock_web(r".*fb\.com.*", {"status": 200, "body": body})
 
 
+def mock_ordered_success(vm, confidence=90):
+    vm.mock_llm(r".*apple\.com.*", verdict(True, False, confidence, occurred_at_ts=NOW - 200))
+    vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, confidence, occurred_at_ts=NOW - 100))
+
+
 SIDE_YES = 1
 SIDE_NO = 2
 
@@ -433,7 +438,7 @@ def test_full_chain_resolves_yes_and_pays_out():
 
         # both steps verify with high confidence
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
         vm.warp(iso(NOW + 60))
         vm.sender = ALICE  # creator may adjudicate pre-deadline
         m = c.request_resolution(0)
@@ -591,7 +596,7 @@ def test_protocol_fees_accrue_and_sweep():
         relayer_stake(vm, c, 0, CAROL, SIDE_NO, 10 * GEN)
 
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
         vm.warp(iso(NOW + 60))
         vm.sender = ALICE
         c.request_resolution(0)  # YES wins; losing pool = 10 GEN
@@ -618,7 +623,7 @@ def test_market_fee_snapshot_survives_global_fee_change():
         vm.sender = OWNER
         c.set_fees(500, 500)
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         c.request_resolution(0)
         payout = c.get_base_payouts(0)[0]["amount"]
@@ -633,7 +638,7 @@ def test_empty_winning_side_refunds_every_staker_without_fees():
         make_market(vm, c)
         relayer_stake(vm, c, 0, CAROL, SIDE_NO, 3 * GEN)
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         c.request_resolution(0)
         payouts = c.get_base_payouts(0)
@@ -648,13 +653,40 @@ def test_real_world_chronology_contradiction_breaks_chain():
         c = fresh(vm)
         make_market(vm, c)
         mock_sources(vm)
-        vm.mock_llm(r".*Apple announces.*", verdict(True, False, 95, occurred_at_ts=NOW + 20))
-        vm.mock_llm(r".*Meta cuts.*", verdict(True, False, 95, occurred_at_ts=NOW + 10))
+        vm.mock_llm(r".*apple\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 20))
+        vm.mock_llm(r".*about\.fb\.com.*", verdict(True, False, 95, occurred_at_ts=NOW + 10))
         vm.warp(iso(NOW + 60)); vm.sender = ALICE
         result = c.request_resolution(0)
         assert result["status"] == "RESOLVED_NO"
         assert result["steps"][1]["state"] == "FAILED"
         assert "Chronology violation" in result["steps"][1]["reasoning"]
+
+
+def test_positive_verdict_without_event_time_stays_pending():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c)
+        mock_sources(vm)
+        vm.mock_llm(r".*", verdict(True, False, 95, occurred_at_ts=0))
+        vm.warp(iso(NOW + 60)); vm.sender = ALICE
+        result = c.check_step(0, 0)
+        assert result["state"] == "PENDING"
+        assert result["confidence"] == 0
+        assert "event time" in result["reasoning"]
+
+
+def test_event_after_market_deadline_cannot_fulfill_chain():
+    vm = VMContext()
+    with vm.activate():
+        c = fresh(vm)
+        make_market(vm, c, deadline=NOW + 30)
+        mock_sources(vm)
+        vm.mock_llm(r".*", verdict(True, False, 95, occurred_at_ts=NOW + 40))
+        vm.warp(iso(NOW + 60)); vm.sender = BOB
+        result = c.request_resolution(0)
+        assert result["status"] == "RESOLVED_NO"
+        assert "after the market deadline" in result["steps"][0]["reasoning"]
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +741,7 @@ def test_fabricated_future_timestamp_cannot_open_early_adjudication_rights():
         c = fresh(vm)
         make_market(vm, c)  # creator ALICE, deadline far in the future
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
 
         # Consensus clock still well before the deadline: BOB is refused
         # no matter what a spoofed argument might have claimed pre-fix.
@@ -771,7 +803,7 @@ def test_payout_amount_is_independent_of_any_caller_timing_claim():
         relayer_stake(vm, c, 0, CAROL, SIDE_NO, 1 * GEN)
 
         mock_sources(vm)
-        vm.mock_llm(r".*", verdict(True, False, 90))
+        mock_ordered_success(vm)
         vm.warp(iso(NOW + 60))
         vm.sender = ALICE
         c.request_resolution(0)

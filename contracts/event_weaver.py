@@ -731,14 +731,37 @@ Rules:
         step.checked_at_ts = u64(max(0, now_ts))
         step.check_count = u32(int(step.check_count) + 1)
 
-    def _enforce_chronology(self, steps: DynArray[ChainStep], step_index: int, verdict: dict) -> dict:
-        """Reject an otherwise-positive event whose evidenced occurrence
-        time is not strictly after the preceding fulfilled event."""
-        if step_index <= 0 or not bool(verdict.get("occurred")):
+    def _enforce_chronology(
+        self,
+        market: Market,
+        steps: DynArray[ChainStep],
+        step_index: int,
+        verdict: dict,
+        now_ts: int,
+    ) -> dict:
+        """Require a plausible, evidence-backed event time for every positive
+        verdict and strict increase across the ordered chain."""
+        if not bool(verdict.get("occurred")):
             return verdict
-        previous_ts = int(steps[step_index - 1].occurred_at_ts)
         current_ts = int(verdict.get("occurred_at_ts", 0))
-        if previous_ts > 0 and current_ts > 0 and current_ts <= previous_ts:
+        if current_ts <= 0 or current_ts > now_ts:
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = True
+            verdict["confidence"] = 0
+            verdict["reasoning"] = "Positive verdict rejected: no plausible evidence-backed event time was supplied."
+            verdict["occurred_at_ts"] = 0
+            return verdict
+        if current_ts > int(market.deadline_ts):
+            verdict["occurred"] = False
+            verdict["can_still_occur"] = False
+            verdict["confidence"] = 100
+            verdict["reasoning"] = (
+                f"Timing violation: evidenced event time {current_ts} is after "
+                f"the market deadline {int(market.deadline_ts)}."
+            )
+            return verdict
+        previous_ts = int(steps[step_index - 1].occurred_at_ts) if step_index > 0 else 0
+        if step_index > 0 and (previous_ts <= 0 or current_ts <= previous_ts):
             verdict["occurred"] = False
             verdict["can_still_occur"] = False
             verdict["confidence"] = 100
@@ -1175,7 +1198,7 @@ Rules:
             int(market.deadline_ts),
             now_ts,
         )
-        verdict = self._enforce_chronology(steps, step_index, verdict)
+        verdict = self._enforce_chronology(market, steps, step_index, verdict, now_ts)
         self._apply_verdict_to_step(market, step, verdict, now_ts)
         self._log(
             market_id,
@@ -1226,7 +1249,7 @@ Rules:
                 int(market.deadline_ts),
                 now_ts,
             )
-            verdict = self._enforce_chronology(steps, index, verdict)
+            verdict = self._enforce_chronology(market, steps, index, verdict, now_ts)
             self._apply_verdict_to_step(market, step, verdict, now_ts)
             self._log(
                 market_id,
